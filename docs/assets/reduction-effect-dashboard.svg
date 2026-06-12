@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820" role="img" aria-labelledby="title desc">
+  <title id="title">営業用地図アプリ 削減効果ダッシュボード</title>
+  <desc id="desc">紙地図運用から地図アプリへ移行した場合の月間削減時間、金額換算、訪問予定枠、投資回収の試算を示すグラフ。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="0.55" stop-color="#eef7f5"/>
+      <stop offset="1" stop-color="#f6f3ff"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#60a5fa"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d97706"/>
+      <stop offset="1" stop-color="#fbbf24"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.13"/>
+    </filter>
+    <style>
+      .title { font: 700 34px "Segoe UI", "Noto Sans JP", sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 15px "Segoe UI", "Noto Sans JP", sans-serif; fill: #475569; }
+      .card-title { font: 700 16px "Segoe UI", "Noto Sans JP", sans-serif; fill: #334155; }
+      .big { font: 800 34px "Segoe UI", "Noto Sans JP", sans-serif; fill: #0f172a; }
+      .unit { font: 600 15px "Segoe UI", "Noto Sans JP", sans-serif; fill: #64748b; }
+      .label { font: 600 14px "Segoe UI", "Noto Sans JP", sans-serif; fill: #334155; }
+      .small { font: 500 12px "Segoe UI", "Noto Sans JP", sans-serif; fill: #64748b; }
+      .axis { stroke: #cbd5e1; stroke-width: 1; }
+      .card { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1; filter: url(#shadow); }
+      .pill { fill: #ecfeff; stroke: #99f6e4; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="820" fill="url(#bg)"/>
+  <text x="56" y="64" class="title">削減効果ダッシュボード</text>
+  <text x="56" y="94" class="subtitle">営業9人、1人月160時間、人件費1人月60万円で仮置き。住宅地図API費・通信費・端末費は別途精査。</text>
+  <rect x="914" y="42" width="230" height="42" rx="21" class="pill"/>
+  <text x="936" y="68" class="label" fill="#0f766e">MVP試算: 月次インパクト</text>
+
+  <rect x="56" y="126" width="248" height="142" rx="18" class="card"/>
+  <text x="78" y="158" class="card-title">月間削減時間</text>
+  <text x="78" y="209" class="big">90〜225h</text>
+  <text x="78" y="238" class="unit">紙地図探索・転記・ルート検討を削減</text>
+
+  <rect x="326" y="126" width="248" height="142" rx="18" class="card"/>
+  <text x="348" y="158" class="card-title">人月換算</text>
+  <text x="348" y="209" class="big">0.56〜1.4</text>
+  <text x="348" y="238" class="unit">人月/月の改善余地</text>
+
+  <rect x="596" y="126" width="248" height="142" rx="18" class="card"/>
+  <text x="618" y="158" class="card-title">人件費換算</text>
+  <text x="618" y="209" class="big">33.75〜84.38万</text>
+  <text x="618" y="238" class="unit">円/月の改善効果</text>
+
+  <rect x="866" y="126" width="278" height="142" rx="18" class="card"/>
+  <text x="888" y="158" class="card-title">訪問予定枠の増加</text>
+  <text x="888" y="209" class="big">126〜315件</text>
+  <text x="888" y="238" class="unit">削減時間70%を訪問へ再配分</text>
+
+  <rect x="56" y="304" width="526" height="258" rx="18" class="card"/>
+  <text x="82" y="342" class="card-title">月間業務時間の変化</text>
+  <line x1="176" y1="504" x2="532" y2="504" class="axis"/>
+  <line x1="176" y1="374" x2="176" y2="504" class="axis"/>
+  <text x="92" y="397" class="label">現行非効率</text>
+  <rect x="176" y="376" width="355" height="32" rx="8" fill="url(#amber)"/>
+  <text x="542" y="398" class="label">144〜270h</text>
+  <text x="92" y="452" class="label">導入後残作業</text>
+  <rect x="176" y="431" width="71" height="32" rx="8" fill="#cbd5e1"/>
+  <text x="258" y="453" class="label">27〜54h</text>
+  <text x="92" y="507" class="label">削減効果</text>
+  <rect x="176" y="486" width="296" height="32" rx="8" fill="url(#green)"/>
+  <text x="484" y="508" class="label">90〜225h</text>
+  <text x="82" y="540" class="small">最大値270hを横幅100%として表示。削減時間の70%を訪問・商談・点検案内へ回す想定。</text>
+
+  <rect x="618" y="304" width="526" height="258" rx="18" class="card"/>
+  <text x="644" y="342" class="card-title">月次インパクトと運用費</text>
+  <line x1="780" y1="504" x2="1096" y2="504" class="axis"/>
+  <line x1="780" y1="374" x2="780" y2="504" class="axis"/>
+  <text x="644" y="397" class="label">人件費改善</text>
+  <rect x="780" y="376" width="296" height="32" rx="8" fill="url(#blue)"/>
+  <text x="1086" y="398" class="label">33.75〜84.38万円</text>
+  <text x="644" y="452" class="label">システム運用</text>
+  <rect x="780" y="431" width="21" height="32" rx="8" fill="#94a3b8"/>
+  <text x="812" y="453" class="label">1〜6万円</text>
+  <text x="644" y="507" class="label">備品月額</text>
+  <rect x="780" y="486" width="10" height="32" rx="8" fill="#94a3b8"/>
+  <text x="802" y="508" class="label">0.9〜2.7万円</text>
+  <text x="644" y="540" class="small">住宅地図API、端末、通信費は別途。営業実績に応じて成約効果を再計算。</text>
+
+  <rect x="56" y="602" width="348" height="146" rx="18" class="card"/>
+  <text x="82" y="638" class="card-title">徒歩負担の軽減</text>
+  <text x="82" y="681" class="big">1万歩超</text>
+  <text x="82" y="712" class="unit">紙地図確認の歩行・立ち止まりを削減</text>
+  <text x="82" y="735" class="small">折り畳み自転車、ホルダー、ケースで現場負担を下げる</text>
+
+  <rect x="426" y="602" width="348" height="146" rx="18" class="card"/>
+  <text x="452" y="638" class="card-title">初期備品投資</text>
+  <text x="452" y="681" class="big">36.9〜99.9万</text>
+  <text x="452" y="712" class="unit">9人分の仮置き</text>
+  <text x="452" y="735" class="small">自転車、ホルダー、バッテリー、耐衝撃ケース</text>
+
+  <rect x="796" y="602" width="348" height="146" rx="18" class="card"/>
+  <text x="822" y="638" class="card-title">回収目安</text>
+  <text x="822" y="681" class="big">0.5〜3か月</text>
+  <text x="822" y="712" class="unit">人件費改善だけで見た場合</text>
+  <text x="822" y="735" class="small">地図API費・運用定着率により再評価が必要</text>
+
+  <text x="56" y="790" class="small">注: すべて仮置き。実際の効果は訪問件数、成約率、移動手段、地図API契約、運用定着状況で変動します。</text>
+</svg>
