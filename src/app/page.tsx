@@ -12,6 +12,7 @@ import {
   Download,
   Eraser,
   Filter,
+  History,
   LogOut,
   MapPin,
   Maximize2,
@@ -45,6 +46,7 @@ import seedLocations from "../../data/locations.json";
 import seedNotes from "../../data/notes.json";
 import seedVisitPlanItems from "../../data/visit-plan-items.json";
 import seedVisitPlans from "../../data/visit-plans.json";
+import seedVisitRecords from "../../data/visit-records.json";
 import type {
   DuplicateCandidate,
   HandwrittenNote,
@@ -57,6 +59,8 @@ import type {
   VisitPlan,
   VisitPlanItem,
   VisitPlanWithItems,
+  VisitRecord,
+  VisitRecordInput,
 } from "@/types/domain";
 
 type LocationFormState = {
@@ -93,7 +97,22 @@ const storageKeys = {
   notes: "sales-map.notes",
   visitPlans: "sales-map.visitPlans",
   visitPlanItems: "sales-map.visitPlanItems",
+  visitRecords: "sales-map.visitRecords",
 };
+
+const visitResultOptions: Array<{
+  value: VisitRecord["result"];
+  label: string;
+  status?: LocationStatus;
+}> = [
+  { value: "visited", label: "訪問済み", status: "visited" },
+  { value: "absent", label: "不在", status: "absent" },
+  { value: "revisit", label: "再訪問予定", status: "visited" },
+  { value: "prospect", label: "見込みあり", status: "prospect" },
+  { value: "contracted", label: "契約済み", status: "contracted" },
+  { value: "lost", label: "失注", status: "lost" },
+  { value: "do_not_visit", label: "訪問NG", status: "do_not_visit" },
+];
 
 function readLocalRecords<T>(key: string, seed: T[]): T[] {
   if (typeof window === "undefined") return seed;
@@ -117,6 +136,39 @@ function writeLocalRecords<T>(key: string, records: T[]) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function toDatetimeLocal(date = new Date()) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function datetimeLocalToIso(value: string) {
+  return value ? new Date(value).toISOString() : nowIso();
+}
+
+function formatVisitDateTime(value: string) {
+  return new Date(value).toLocaleString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function toLocalDateString(value: string) {
+  const date = new Date(value);
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 10);
+}
+
+function visitResultLabel(result: VisitRecord["result"]) {
+  return visitResultOptions.find((option) => option.value === result)?.label ?? result;
+}
+
+function visitResultToStatus(result: VisitRecord["result"]) {
+  return visitResultOptions.find((option) => option.value === result)?.status;
 }
 
 function normalizeAddress(address: string) {
@@ -163,6 +215,15 @@ function listStoredNotes(locationId: string) {
   )
     .filter((note) => note.locationId === locationId && !note.deletedAt)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function listStoredVisitRecords(locationId: string) {
+  return readLocalRecords<VisitRecord>(
+    storageKeys.visitRecords,
+    seedVisitRecords as VisitRecord[],
+  )
+    .filter((record) => record.locationId === locationId)
+    .sort((a, b) => b.visitedAt.localeCompare(a.visitedAt));
 }
 
 function withVisitPlanItems(
@@ -593,6 +654,7 @@ export default function Home() {
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [form, setForm] = useState<LocationFormState>(emptyForm);
   const [notes, setNotes] = useState<HandwrittenNote[]>([]);
+  const [visitRecords, setVisitRecords] = useState<VisitRecord[]>([]);
   const [visitPlan, setVisitPlan] = useState<VisitPlanWithItems | null>(null);
   const [visitPlanDate, setVisitPlanDate] = useState(toDateString());
   const [visitPlanUserId, setVisitPlanUserId] = useState("sales-001");
@@ -634,6 +696,10 @@ export default function Home() {
     setNotesLoading(true);
     setNotes(listStoredNotes(locationId));
     setNotesLoading(false);
+  }
+
+  async function loadVisitRecords(locationId: string) {
+    setVisitRecords(listStoredVisitRecords(locationId));
   }
 
   const effectiveVisitPlanUserId =
@@ -808,6 +874,54 @@ export default function Home() {
 
     writeLocalRecords(storageKeys.notes, [...storedNotes, note]);
     setNotes(listStoredNotes(params.locationId));
+  }
+
+  async function saveVisitRecord(input: VisitRecordInput) {
+    const storedRecords = readLocalRecords<VisitRecord>(
+      storageKeys.visitRecords,
+      seedVisitRecords as VisitRecord[],
+    );
+    const now = nowIso();
+    const record: VisitRecord = {
+      visitId: `visit-${crypto.randomUUID()}`,
+      locationId: input.locationId,
+      userId: input.userId,
+      visitedAt: input.visitedAt,
+      result: input.result,
+      memo: input.memo?.trim() || undefined,
+      nextActionDate: input.nextActionDate || undefined,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    writeLocalRecords(storageKeys.visitRecords, [record, ...storedRecords]);
+
+    const storedLocations = readLocalRecords<Location>(
+      storageKeys.locations,
+      seedLocations as Location[],
+    );
+    const index = storedLocations.findIndex(
+      (location) => location.locationId === input.locationId,
+    );
+    const nextStatus = visitResultToStatus(input.result);
+    if (index >= 0) {
+      const currentLocation = storedLocations[index];
+      const keepConstructed =
+        currentLocation.status === "constructed" &&
+        (input.result === "visited" || input.result === "revisit");
+      storedLocations[index] = {
+        ...currentLocation,
+        status: keepConstructed || !nextStatus ? currentLocation.status : nextStatus,
+        lastVisitDate: toLocalDateString(input.visitedAt),
+        updatedBy: input.userId,
+        updatedAt: now,
+      };
+      writeLocalRecords(storageKeys.locations, storedLocations);
+      await loadLocations(false);
+    }
+
+    setSelectedId(input.locationId);
+    await loadVisitRecords(input.locationId);
   }
 
   async function deleteHandwrittenNote(note: HandwrittenNote, actorUserId: string) {
@@ -1017,6 +1131,7 @@ export default function Home() {
       Promise.resolve().then(() => {
         if (!cancelled) {
           setNotes([]);
+          setVisitRecords([]);
         }
       });
 
@@ -1029,6 +1144,7 @@ export default function Home() {
       .then((storedNotes) => {
         if (!cancelled) {
           setNotes(storedNotes);
+          setVisitRecords(listStoredVisitRecords(selectedLocationId));
         }
       });
 
@@ -1427,12 +1543,14 @@ export default function Home() {
               location={selectedLocation}
               currentUser={currentUser}
               notes={notes}
+              visitRecords={visitRecords}
               notesLoading={notesLoading}
               onEdit={startEdit}
               onDelete={deleteLocation}
               onNotesChanged={(locationId) => loadNotes(locationId)}
               onSaveNote={saveHandwrittenNote}
               onDeleteNote={deleteHandwrittenNote}
+              onSaveVisitRecord={saveVisitRecord}
             />
           </div>
 
@@ -2375,16 +2493,19 @@ function LocationDetail({
   location,
   currentUser,
   notes,
+  visitRecords,
   notesLoading,
   onEdit,
   onDelete,
   onNotesChanged,
   onSaveNote,
   onDeleteNote,
+  onSaveVisitRecord,
 }: {
   location: Location | null;
   currentUser: User;
   notes: HandwrittenNote[];
+  visitRecords: VisitRecord[];
   notesLoading: boolean;
   onEdit: (location: Location) => void;
   onDelete: (location: Location) => void;
@@ -2396,6 +2517,7 @@ function LocationDetail({
     dataUrl: string;
   }) => Promise<void>;
   onDeleteNote: (note: HandwrittenNote, actorUserId: string) => Promise<void>;
+  onSaveVisitRecord: (input: VisitRecordInput) => Promise<void>;
 }) {
   if (!location) {
     return (
@@ -2466,6 +2588,14 @@ function LocationDetail({
         ))}
       </div>
 
+      <VisitRecordsSection
+        key={location.locationId}
+        currentUser={currentUser}
+        location={location}
+        records={visitRecords}
+        onSaveVisitRecord={onSaveVisitRecord}
+      />
+
       <HandwrittenNotesSection
         currentUser={currentUser}
         location={location}
@@ -2476,6 +2606,219 @@ function LocationDetail({
         onDeleteNote={onDeleteNote}
       />
     </section>
+  );
+}
+
+function VisitRecordsSection({
+  currentUser,
+  location,
+  records,
+  onSaveVisitRecord,
+}: {
+  currentUser: User;
+  location: Location;
+  records: VisitRecord[];
+  onSaveVisitRecord: (input: VisitRecordInput) => Promise<void>;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [visitedAt, setVisitedAt] = useState(toDatetimeLocal());
+  const [result, setResult] = useState<VisitRecord["result"]>("visited");
+  const [nextActionDate, setNextActionDate] = useState("");
+  const [memo, setMemo] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [recordMessage, setRecordMessage] = useState("");
+
+  async function submitVisitRecord(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setRecordMessage("");
+    const formElements = event.currentTarget.elements;
+    const submittedVisitedAt =
+      (
+        formElements.namedItem("visitedAt") as HTMLInputElement | null
+      )?.value.trim() || visitedAt;
+    const submittedResult =
+      ((
+        formElements.namedItem("result") as HTMLSelectElement | null
+      )?.value.trim() as VisitRecord["result"]) ||
+      result;
+    const submittedNextActionDate =
+      (
+        formElements.namedItem("nextActionDate") as HTMLInputElement | null
+      )?.value.trim() || nextActionDate;
+    const submittedMemo =
+      (
+        formElements.namedItem("memo") as HTMLTextAreaElement | null
+      )?.value.trim() || memo.trim();
+
+    try {
+      await onSaveVisitRecord({
+        locationId: location.locationId,
+        userId: currentUser.userId,
+        visitedAt: datetimeLocalToIso(submittedVisitedAt),
+        result: submittedResult,
+        memo: submittedMemo || undefined,
+        nextActionDate: submittedNextActionDate || undefined,
+      });
+    } catch {
+      setSaving(false);
+      setRecordMessage("訪問記録の保存に失敗しました。");
+      return;
+    }
+
+    setSaving(false);
+    setVisitedAt(toDatetimeLocal());
+    setResult("visited");
+    setNextActionDate("");
+    setMemo("");
+    setIsOpen(false);
+    setRecordMessage("訪問記録を保存しました。");
+  }
+
+  return (
+    <div className="mt-5 border-t border-zinc-100 pt-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <History size={17} />
+            <h3 className="font-semibold">訪問履歴</h3>
+          </div>
+          <p className="mt-1 text-sm text-zinc-600">
+            訪問結果を残すと、最終訪問日と地点ステータスも更新されます。
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-50"
+          onClick={() => setIsOpen((value) => !value)}
+        >
+          {isOpen ? <X size={16} /> : <Plus size={16} />}
+          {isOpen ? "閉じる" : "記録追加"}
+        </button>
+      </div>
+
+      {recordMessage ? (
+        <p className="mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">
+          {recordMessage}
+        </p>
+      ) : null}
+
+      {isOpen ? (
+        <form
+          className="mb-4 space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-3"
+          onSubmit={submitVisitRecord}
+        >
+          <label className="grid gap-1 text-sm font-medium">
+            訪問日時
+            <input
+              name="visitedAt"
+              className="h-10 rounded-md border border-zinc-300 px-3 text-sm outline-none focus:border-emerald-600"
+              type="datetime-local"
+              value={visitedAt}
+              onInput={(event) => setVisitedAt(event.currentTarget.value)}
+              onChange={(event) => setVisitedAt(event.target.value)}
+              required
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm font-medium">
+            結果
+            <select
+              name="result"
+              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-emerald-600"
+              value={result}
+              onChange={(event) =>
+                setResult(event.target.value as VisitRecord["result"])
+              }
+            >
+              {visitResultOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-sm font-medium">
+            次回アクション日
+            <input
+              name="nextActionDate"
+              className="h-10 rounded-md border border-zinc-300 px-3 text-sm outline-none focus:border-emerald-600"
+              type="date"
+              value={nextActionDate}
+              onInput={(event) => setNextActionDate(event.currentTarget.value)}
+              onChange={(event) => setNextActionDate(event.target.value)}
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm font-medium">
+            メモ
+            <textarea
+              name="memo"
+              className="min-h-20 rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"
+              value={memo}
+              onInput={(event) => setMemo(event.currentTarget.value)}
+              onChange={(event) => setMemo(event.target.value)}
+              placeholder="会話内容、次に確認すること、注意事項"
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+            disabled={saving}
+          >
+            <Save size={16} />
+            {saving ? "保存中" : "訪問記録を保存"}
+          </button>
+        </form>
+      ) : null}
+
+      {records.length === 0 ? (
+        <p className="rounded-md bg-zinc-50 px-3 py-3 text-sm text-zinc-600">
+          まだ訪問履歴はありません。
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {records.slice(0, 8).map((record) => {
+            const status = visitResultToStatus(record.result) ?? "visited";
+            const meta = getStatusMeta(status);
+            const user = findUser(record.userId);
+            return (
+              <li
+                key={record.visitId}
+                className="rounded-md border border-zinc-200 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span
+                    className="rounded px-2 py-1 text-xs font-semibold text-white"
+                    style={{ backgroundColor: meta.marker }}
+                  >
+                    {visitResultLabel(record.result)}
+                  </span>
+                  <span className="text-xs text-zinc-500">
+                    {formatVisitDateTime(record.visitedAt)}
+                  </span>
+                </div>
+                <div className="mt-2 text-sm text-zinc-600">
+                  担当: {user?.name ?? "未設定"}
+                </div>
+                {record.memo ? (
+                  <p className="mt-2 text-sm leading-6 text-zinc-700">
+                    {record.memo}
+                  </p>
+                ) : null}
+                {record.nextActionDate ? (
+                  <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs font-medium text-amber-950">
+                    次回アクション: {record.nextActionDate}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 

@@ -1,0 +1,35 @@
+[
+  {
+    "visitId": "visit-001",
+    "locationId": "loc-001",
+    "userId": "sales-001",
+    "visitedAt": "2026-06-03T10:30:00.000Z",
+    "result": "visited",
+    "memo": "床下点検を実施。薬剤保証の説明を次回行う。",
+    "nextActionDate": "2026-07-15",
+    "createdAt": "2026-06-03T10:30:00.000Z",
+    "updatedAt": "2026-06-03T10:30:00.000Z"
+  },
+  {
+    "visitId": "visit-002",
+    "locationId": "loc-004",
+    "userId": "sales-001",
+    "visitedAt": "2026-06-12T02:50:00.000Z",
+    "result": "absent",
+    "memo": "午前不在。夕方の再訪問候補。",
+    "nextActionDate": "2026-06-13",
+    "createdAt": "2026-06-12T02:50:00.000Z",
+    "updatedAt": "2026-06-12T02:50:00.000Z"
+  },
+  {
+    "visitId": "visit-003",
+    "locationId": "loc-003",
+    "userId": "sales-003",
+    "visitedAt": "2026-06-10T06:30:00.000Z",
+    "result": "prospect",
+    "memo": "管理物件の一括点検に興味あり。見積もり待ち。",
+    "nextActionDate": "2026-06-20",
+    "createdAt": "2026-06-10T06:30:00.000Z",
+    "updatedAt": "2026-06-10T06:30:00.000Z"
+  }
+]

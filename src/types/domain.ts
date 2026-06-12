@@ -63,6 +63,15 @@ export type VisitRecord = {
   updatedAt: string;
 };
 
+export type VisitRecordInput = {
+  locationId: string;
+  userId: string;
+  visitedAt: string;
+  result: VisitRecord["result"];
+  memo?: string;
+  nextActionDate?: string;
+};
+
 export type HandwrittenNote = {
   noteId: string;
   locationId: string;
@@ -182,6 +191,11 @@ export interface HandwrittenNoteRepository {
   get(noteId: string): Promise<HandwrittenNote | null>;
   create(input: HandwrittenNoteInput): Promise<HandwrittenNote>;
   softDelete(noteId: string, actorUserId: string): Promise<HandwrittenNote>;
+}
+
+export interface VisitRecordRepository {
+  listByLocation(locationId: string): Promise<VisitRecord[]>;
+  create(input: VisitRecordInput): Promise<VisitRecord>;
 }
 
 export type RoutePoint = {
