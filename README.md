@@ -2,7 +2,7 @@
 
 シロアリ防除・点検の訪問販売で使う紙地図運用を、タブレット・PCで共有できる業務データへ置き換えるための初回プロトタイプです。
 
-この版は要件書の Step 1〜Step 7 に対応しています。
+この版は要件書の Step 1〜Step 8 に対応しています。
 
 - Next.js + TypeScript + Tailwind CSS
 - モック認証による管理者 / 営業担当者の画面切り替え
@@ -12,6 +12,7 @@
 - 地点詳細に紐づくCanvas手書きメモのPNG保存
 - 今日の訪問予定作成、地点追加、訪問順の並び替え
 - MockRouteService による訪問順の簡易最適化、総距離・推定時間・地図上ルート表示
+- 地点登録・訪問予定追加時の重複候補警告
 - GitHub Pagesで動くブラウザ内保存と、AWS移行用のRepository層
 - AWS / DynamoDB / Cognito / 地図APIへ差し替えやすい構成
 
@@ -62,6 +63,8 @@ npm.cmd run build
 
 訪問先が2件以上ある場合は「ルート最適化」で訪問順を並び替えられます。初回実装では `MockRouteService` が現在の先頭地点を出発地点として近い順に並べ、総距離・推定時間・Mock地図上のルート線を表示します。将来は同じ `RouteService` 境界で Amazon Location Service の `OptimizeWaypoints` / `CalculateRoutes` へ差し替える想定です。
 
+地点登録や訪問予定追加では、同住所、半径20m以内、顧客名類似、施工済み、点検予定、訪問NGの候補を警告表示します。初回実装では登録や追加を止めず、現場判断のための注意表示にしています。
+
 主な型と差し替え境界:
 
 - `User`, `Location`, `VisitRecord`
@@ -72,6 +75,7 @@ npm.cmd run build
 - `MapTileProvider`
 - `GeocodingService`
 - `RouteService`
+- `DuplicateCandidate`
 
 ## AWS移行方針
 
@@ -95,7 +99,7 @@ flowchart LR
 - モック認証から Amazon Cognito へ
 - ローカルJSON Repository から DynamoDB Repository へ
 - MockMapProvider から Amazon Location Service / ZENRIN Maps API / MapLibre互換タイルへ
-- 後続フェーズで手書きメモ保存先をS3へ差し替え、MockRouteServiceをAmazon Location Serviceへ接続し、CSVインポートを追加
+- 後続フェーズで手書きメモ保存先をS3へ差し替え、MockRouteServiceをAmazon Location Serviceへ接続し、重複判定をAPI側に移し、CSVインポートを追加
 
 紙地図スキャンやコピー画像の取り込みは前提にしません。地図データは正規ライセンスのAPI利用を前提にします。
 
@@ -134,5 +138,4 @@ flowchart LR
 
 - 訪問履歴: 地点詳細から訪問記録追加
 - ルート最適化: MockRouteService から Amazon Location Service の OptimizeWaypoints / CalculateRoutes へ
-- 重複判定: 住所一致、20m以内、訪問NG、施工済み警告
 - 管理者機能: CSVインポート / エクスポート

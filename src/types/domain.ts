@@ -138,6 +138,19 @@ export type VisitPlanItemInput = {
   memo?: string;
 };
 
+export type DuplicateCandidate = {
+  locationId: string;
+  reason:
+    | "same_address"
+    | "nearby"
+    | "similar_name"
+    | "constructed"
+    | "inspection_scheduled"
+    | "do_not_visit";
+  score: number;
+  message: string;
+};
+
 export interface VisitPlanRepository {
   list(params: { userId?: string; date?: string }): Promise<VisitPlanWithItems[]>;
   get(planId: string): Promise<VisitPlanWithItems | null>;

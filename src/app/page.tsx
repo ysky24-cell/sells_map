@@ -40,6 +40,7 @@ import seedNotes from "../../data/notes.json";
 import seedVisitPlanItems from "../../data/visit-plan-items.json";
 import seedVisitPlans from "../../data/visit-plans.json";
 import type {
+  DuplicateCandidate,
   HandwrittenNote,
   Location,
   LocationInput,
@@ -114,6 +115,17 @@ function nowIso() {
 
 function normalizeAddress(address: string) {
   return address.replace(/\s+/g, "").trim();
+}
+
+function normalizeName(name?: string) {
+  return (name ?? "").replace(/\s+/g, "").trim().toLowerCase();
+}
+
+function isSimilarName(a?: string, b?: string) {
+  const left = normalizeName(a);
+  const right = normalizeName(b);
+  if (left.length < 2 || right.length < 2) return false;
+  return left.includes(right) || right.includes(left);
 }
 
 function mockGeocode(address: string) {
@@ -192,6 +204,185 @@ function distanceMeters(a: RoutePoint, b: RoutePoint) {
   const angle = 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 
   return earthRadiusMeters * angle;
+}
+
+function locationToPoint(location: Location): RoutePoint {
+  return {
+    id: location.locationId,
+    lat: location.lat,
+    lng: location.lng,
+    label: location.customerName || location.address,
+  };
+}
+
+function findDuplicateCandidates(
+  input: {
+    locationId?: string;
+    customerName?: string;
+    address?: string;
+    lat?: number;
+    lng?: number;
+  },
+  existingLocations: Location[],
+): DuplicateCandidate[] {
+  const normalizedInputAddress = input.address
+    ? normalizeAddress(input.address)
+    : undefined;
+  const inputHasPoint =
+    typeof input.lat === "number" &&
+    Number.isFinite(input.lat) &&
+    typeof input.lng === "number" &&
+    Number.isFinite(input.lng);
+  const candidates = new Map<string, DuplicateCandidate>();
+
+  function upsert(candidate: DuplicateCandidate) {
+    const current = candidates.get(`${candidate.locationId}-${candidate.reason}`);
+    if (!current || current.score < candidate.score) {
+      candidates.set(`${candidate.locationId}-${candidate.reason}`, candidate);
+    }
+  }
+
+  existingLocations
+    .filter((location) => location.locationId !== input.locationId)
+    .forEach((location) => {
+      const label = location.customerName || location.address;
+      let matchedDuplicate = false;
+      if (
+        normalizedInputAddress &&
+        normalizeAddress(location.normalizedAddress ?? location.address) ===
+          normalizedInputAddress
+      ) {
+        matchedDuplicate = true;
+        upsert({
+          locationId: location.locationId,
+          reason: "same_address",
+          score: 100,
+          message: `${label} と住所が一致しています。`,
+        });
+      }
+
+      if (inputHasPoint) {
+        const distance = distanceMeters(
+          {
+            id: "input",
+            lat: input.lat as number,
+            lng: input.lng as number,
+            label: "入力地点",
+          },
+          locationToPoint(location),
+        );
+        if (distance <= 20) {
+          matchedDuplicate = true;
+          upsert({
+            locationId: location.locationId,
+            reason: "nearby",
+            score: 80,
+            message: `${label} が半径20m以内にあります。`,
+          });
+        }
+      }
+
+      if (isSimilarName(input.customerName, location.customerName)) {
+        matchedDuplicate = true;
+        upsert({
+          locationId: location.locationId,
+          reason: "similar_name",
+          score: 50,
+          message: `${label} と顧客名が似ています。`,
+        });
+      }
+
+      if (matchedDuplicate && location.status === "constructed") {
+        upsert({
+          locationId: location.locationId,
+          reason: "constructed",
+          score: 70,
+          message: `${label} は施工済みです。重複訪問に注意してください。`,
+        });
+      }
+
+      if (matchedDuplicate && location.status === "inspection_due") {
+        upsert({
+          locationId: location.locationId,
+          reason: "inspection_scheduled",
+          score: 60,
+          message: `${label} は点検予定があります。担当者と日程を確認してください。`,
+        });
+      }
+
+      if (matchedDuplicate && location.status === "do_not_visit") {
+        upsert({
+          locationId: location.locationId,
+          reason: "do_not_visit",
+          score: 100,
+          message: `${label} は訪問NGです。訪問予定に入れないでください。`,
+        });
+      }
+    });
+
+  return [...candidates.values()].sort((a, b) => b.score - a.score);
+}
+
+function findVisitWarningsForLocations(
+  locationIds: string[],
+  existingLocations: Location[],
+) {
+  const uniqueIds = [...new Set(locationIds)];
+  const warnings: DuplicateCandidate[] = [];
+  uniqueIds.forEach((locationId) => {
+    const location = existingLocations.find((item) => item.locationId === locationId);
+    if (!location) return;
+    warnings.push(
+      ...findDuplicateCandidates(
+        {
+          locationId: location.locationId,
+          customerName: location.customerName,
+          address: location.address,
+          lat: location.lat,
+          lng: location.lng,
+        },
+        existingLocations,
+      ),
+    );
+
+    const label = location.customerName || location.address;
+    if (location.status === "constructed") {
+      warnings.push({
+        locationId,
+        reason: "constructed",
+        score: 70,
+        message: `${label} は施工済みです。訪問目的を確認してください。`,
+      });
+    }
+    if (location.status === "inspection_due") {
+      warnings.push({
+        locationId,
+        reason: "inspection_scheduled",
+        score: 60,
+        message: `${label} は点検予定です。重複予定になっていないか確認してください。`,
+      });
+    }
+    if (location.status === "do_not_visit") {
+      warnings.push({
+        locationId,
+        reason: "do_not_visit",
+        score: 100,
+        message: `${label} は訪問NGです。予定追加前に管理者確認が必要です。`,
+      });
+    }
+  });
+
+  return warnings
+    .filter(
+      (warning, index, all) =>
+        all.findIndex(
+          (item) =>
+            item.locationId === warning.locationId &&
+            item.reason === warning.reason &&
+            item.message === warning.message,
+        ) === index,
+    )
+    .sort((a, b) => b.score - a.score);
 }
 
 function optimizeRoutePoints(points: RoutePoint[]): OptimizedRoute {
@@ -659,6 +850,41 @@ export default function Home() {
     filteredLocations[0] ??
     null;
   const selectedLocationId = selectedLocation?.locationId;
+  const formDuplicateCandidates = useMemo(() => {
+    if (!form.address.trim() && !form.customerName.trim()) return [];
+    const geocoded =
+      form.lat && form.lng
+        ? { lat: Number(form.lat), lng: Number(form.lng) }
+        : form.address.trim()
+          ? mockGeocode(form.address)
+          : { lat: Number.NaN, lng: Number.NaN };
+
+    return findDuplicateCandidates(
+      {
+        locationId: form.locationId,
+        customerName: form.customerName,
+        address: form.address,
+        lat: geocoded.lat,
+        lng: geocoded.lng,
+      },
+      locations,
+    ).slice(0, 6);
+  }, [form, locations]);
+  const selectedVisitWarnings = useMemo(
+    () =>
+      selectedLocation
+        ? findVisitWarningsForLocations([selectedLocation.locationId], locations).slice(
+            0,
+            5,
+          )
+        : [],
+    [locations, selectedLocation],
+  );
+  const mapSelectionVisitWarnings = useMemo(
+    () =>
+      findVisitWarningsForLocations(mapSelectedLocationIds, locations).slice(0, 8),
+    [locations, mapSelectedLocationIds],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -934,6 +1160,7 @@ export default function Home() {
             form={form}
             isEditing={isEditing}
             message={message}
+            duplicateCandidates={formDuplicateCandidates}
             onChange={setForm}
             onCancel={resetForm}
             onGeocodeAddress={() => geocodeAddress(form.address)}
@@ -949,6 +1176,8 @@ export default function Home() {
             mapSelectedLocationIds={mapSelectedLocationIds}
             mapPlanSelectionMode={mapPlanSelectionMode}
             optimizedRoute={optimizedRoute}
+            selectedWarnings={selectedVisitWarnings}
+            mapSelectionWarnings={mapSelectionVisitWarnings}
             message={visitPlanMessage}
             onDateChange={(date) => {
               setVisitPlanDate(date);
@@ -1155,6 +1384,8 @@ function VisitPlanPanel({
   mapSelectedLocationIds,
   mapPlanSelectionMode,
   optimizedRoute,
+  selectedWarnings,
+  mapSelectionWarnings,
   message,
   onDateChange,
   onPlanUserChange,
@@ -1176,6 +1407,8 @@ function VisitPlanPanel({
   mapSelectedLocationIds: string[];
   mapPlanSelectionMode: boolean;
   optimizedRoute: OptimizedRoute | null;
+  selectedWarnings: DuplicateCandidate[];
+  mapSelectionWarnings: DuplicateCandidate[];
   message: string;
   onDateChange: (date: string) => void;
   onPlanUserChange: (userId: string) => void;
@@ -1259,6 +1492,14 @@ function VisitPlanPanel({
           </button>
         </div>
 
+        {selectedLocation ? (
+          <DuplicateWarningList
+            title="選択地点の注意"
+            candidates={selectedWarnings}
+            compact
+          />
+        ) : null}
+
         <div className="rounded-md border border-zinc-200 bg-white p-3">
           <button
             type="button"
@@ -1338,6 +1579,11 @@ function VisitPlanPanel({
             <Plus size={16} />
             選択した地点をまとめて追加
           </button>
+          <DuplicateWarningList
+            title="地図選択中の注意"
+            candidates={mapSelectionWarnings}
+            compact
+          />
         </div>
 
         {message ? (
@@ -1405,6 +1651,41 @@ function VisitPlanPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function DuplicateWarningList({
+  title,
+  candidates,
+  compact = false,
+}: {
+  title: string;
+  candidates: DuplicateCandidate[];
+  compact?: boolean;
+}) {
+  if (candidates.length === 0) return null;
+
+  return (
+    <div
+      className={`rounded-md border border-amber-200 bg-amber-50 ${
+        compact ? "p-3" : "p-4"
+      }`}
+    >
+      <div className="flex items-center gap-2 text-sm font-semibold text-amber-950">
+        <AlertTriangle size={16} />
+        {title}
+      </div>
+      <ul className="mt-2 space-y-1">
+        {candidates.map((candidate) => (
+          <li
+            key={`${candidate.locationId}-${candidate.reason}-${candidate.message}`}
+            className="text-xs leading-5 text-amber-950"
+          >
+            {candidate.message}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -2073,6 +2354,7 @@ function LocationForm({
   form,
   isEditing,
   message,
+  duplicateCandidates,
   onChange,
   onCancel,
   onGeocodeAddress,
@@ -2082,6 +2364,7 @@ function LocationForm({
   form: LocationFormState;
   isEditing: boolean;
   message: string;
+  duplicateCandidates: DuplicateCandidate[];
   onChange: (form: LocationFormState) => void;
   onCancel: () => void;
   onGeocodeAddress: () => void;
@@ -2107,6 +2390,10 @@ function LocationForm({
           value={form.address}
           required
           onChange={(value) => onChange({ ...form, address: value })}
+        />
+        <DuplicateWarningList
+          title="重複候補があります"
+          candidates={duplicateCandidates}
         />
         <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
           <div className="flex items-start justify-between gap-3">
