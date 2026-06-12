@@ -2,7 +2,7 @@
 
 シロアリ防除・点検の訪問販売で使う紙地図運用を、タブレット・PCで共有できる業務データへ置き換えるための初回プロトタイプです。
 
-この版は要件書の Step 1〜Step 11 に対応しています。
+この版は要件書の Step 1〜Step 12 に対応しています。
 
 - Next.js + TypeScript + Tailwind CSS
 - モック認証による管理者 / 営業担当者の画面切り替え
@@ -16,6 +16,7 @@
 - 管理者向けの集計ダッシュボード、CSVインポート / エクスポート
 - 地図を大きく見ながら作業するための全画面地図モード
 - 地点詳細からの訪問履歴追加、最終訪問日・ステータス更新
+- CSV入出力、重複警告、ルート最適化、訪問結果変換の自動テスト
 - GitHub Pagesで動くブラウザ内保存と、AWS移行用のRepository層
 - AWS / DynamoDB / Cognito / 地図APIへ差し替えやすい構成
 
@@ -35,6 +36,7 @@ npm.cmd run dev
 ```powershell
 npm.cmd run typecheck
 npm.cmd run lint
+npm.cmd run test
 npm.cmd run build
 ```
 
@@ -44,6 +46,7 @@ npm.cmd run build
 
 - `next.config.ts` で `output: "export"` を設定
 - GitHub Actions: `.github/workflows/pages.yml`
+- Pages公開前に `test` / `typecheck` / `lint` / `build` を実行
 - Pages公開時は `GITHUB_PAGES=true` により `/sells_map` の `basePath` を付与
 - GitHub PagesではサーバーAPIが動かないため、画面操作データはブラウザの `localStorage` に保存
 
@@ -75,6 +78,8 @@ npm.cmd run build
 管理者画面では、地点総数、点検予定、訪問NG、重複候補の件数を確認できます。ステータス別・担当者別の内訳、注意が必要な重複候補一覧も表示します。
 
 CSVエクスポートでは、現在ブラウザに保存されている地点データを `customerName,address,lat,lng,status,assignedUserId,constructionDate,nextInspectionDate,memo,tags` 形式で出力します。CSVインポートでは住所だけの行でもMockGeocodingServiceで内部座標を補完します。GitHub Pages版ではCSVで取り込んだ地点もブラウザの `localStorage` に保存されます。
+
+自動テストは Vitest で実行します。CSV入出力、重複候補・訪問NG警告、MockRouteService の訪問順最適化、訪問結果から地点ステータスへの変換を対象にしています。画面の主要フローは引き続きブラウザ確認で補完します。
 
 主な型と差し替え境界:
 
@@ -149,4 +154,4 @@ flowchart LR
 ## 次フェーズ候補
 
 - ルート最適化: MockRouteService から Amazon Location Service の OptimizeWaypoints / CalculateRoutes へ
-- テスト強化: CSV入出力、重複候補、訪問予定の自動テスト追加
+- テスト強化: ログインから訪問予定作成までのE2Eテスト追加

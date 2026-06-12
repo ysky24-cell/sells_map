@@ -40,8 +40,27 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  csvToLocations,
+  locationsToCsv,
+} from "@/lib/csv/locations-csv";
+import {
+  findDuplicateCandidates,
+  findVisitWarningsForLocations,
+} from "@/lib/duplicates";
+import { mockGeocode, normalizeAddress } from "@/lib/geo";
+import { optimizeRoutePoints } from "@/lib/route/mock-route-service";
 import { getStatusMeta, locationStatusOptions } from "@/lib/status";
 import { mockUsers, findUser } from "@/lib/users";
+import {
+  datetimeLocalToIso,
+  formatVisitDateTime,
+  toDatetimeLocal,
+  toLocalDateString,
+  visitResultLabel,
+  visitResultOptions,
+  visitResultToStatus,
+} from "@/lib/visits";
 import seedLocations from "../../data/locations.json";
 import seedNotes from "../../data/notes.json";
 import seedVisitPlanItems from "../../data/visit-plan-items.json";
@@ -54,7 +73,6 @@ import type {
   LocationInput,
   LocationStatus,
   OptimizedRoute,
-  RoutePoint,
   User,
   VisitPlan,
   VisitPlanItem,
@@ -100,20 +118,6 @@ const storageKeys = {
   visitRecords: "sales-map.visitRecords",
 };
 
-const visitResultOptions: Array<{
-  value: VisitRecord["result"];
-  label: string;
-  status?: LocationStatus;
-}> = [
-  { value: "visited", label: "訪問済み", status: "visited" },
-  { value: "absent", label: "不在", status: "absent" },
-  { value: "revisit", label: "再訪問予定", status: "visited" },
-  { value: "prospect", label: "見込みあり", status: "prospect" },
-  { value: "contracted", label: "契約済み", status: "contracted" },
-  { value: "lost", label: "失注", status: "lost" },
-  { value: "do_not_visit", label: "訪問NG", status: "do_not_visit" },
-];
-
 function readLocalRecords<T>(key: string, seed: T[]): T[] {
   if (typeof window === "undefined") return seed;
   const stored = window.localStorage.getItem(key);
@@ -136,67 +140,6 @@ function writeLocalRecords<T>(key: string, records: T[]) {
 
 function nowIso() {
   return new Date().toISOString();
-}
-
-function toDatetimeLocal(date = new Date()) {
-  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return localDate.toISOString().slice(0, 16);
-}
-
-function datetimeLocalToIso(value: string) {
-  return value ? new Date(value).toISOString() : nowIso();
-}
-
-function formatVisitDateTime(value: string) {
-  return new Date(value).toLocaleString("ja-JP", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function toLocalDateString(value: string) {
-  const date = new Date(value);
-  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return localDate.toISOString().slice(0, 10);
-}
-
-function visitResultLabel(result: VisitRecord["result"]) {
-  return visitResultOptions.find((option) => option.value === result)?.label ?? result;
-}
-
-function visitResultToStatus(result: VisitRecord["result"]) {
-  return visitResultOptions.find((option) => option.value === result)?.status;
-}
-
-function normalizeAddress(address: string) {
-  return address.replace(/\s+/g, "").trim();
-}
-
-function normalizeName(name?: string) {
-  return (name ?? "").replace(/\s+/g, "").trim().toLowerCase();
-}
-
-function isSimilarName(a?: string, b?: string) {
-  const left = normalizeName(a);
-  const right = normalizeName(b);
-  if (left.length < 2 || right.length < 2) return false;
-  return left.includes(right) || right.includes(left);
-}
-
-function mockGeocode(address: string) {
-  const seed = Array.from(address).reduce(
-    (sum, char) => sum + char.charCodeAt(0),
-    0,
-  );
-
-  return {
-    lat: 35.62 + (seed % 900) / 10000,
-    lng: 139.54 + (seed % 1200) / 10000,
-    normalizedAddress: normalizeAddress(address),
-  };
 }
 
 function listStoredLocations() {
@@ -256,353 +199,6 @@ function listStoredVisitPlans(params: {
     .filter((plan) => !params.date || plan.date === params.date)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .map((plan) => withVisitPlanItems(plan, items));
-}
-
-function distanceMeters(a: RoutePoint, b: RoutePoint) {
-  const earthRadiusMeters = 6371000;
-  const lat1 = (a.lat * Math.PI) / 180;
-  const lat2 = (b.lat * Math.PI) / 180;
-  const deltaLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const deltaLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const sinLat = Math.sin(deltaLat / 2);
-  const sinLng = Math.sin(deltaLng / 2);
-  const value =
-    sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
-  const angle = 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
-
-  return earthRadiusMeters * angle;
-}
-
-function locationToPoint(location: Location): RoutePoint {
-  return {
-    id: location.locationId,
-    lat: location.lat,
-    lng: location.lng,
-    label: location.customerName || location.address,
-  };
-}
-
-function findDuplicateCandidates(
-  input: {
-    locationId?: string;
-    customerName?: string;
-    address?: string;
-    lat?: number;
-    lng?: number;
-  },
-  existingLocations: Location[],
-): DuplicateCandidate[] {
-  const normalizedInputAddress = input.address
-    ? normalizeAddress(input.address)
-    : undefined;
-  const inputHasPoint =
-    typeof input.lat === "number" &&
-    Number.isFinite(input.lat) &&
-    typeof input.lng === "number" &&
-    Number.isFinite(input.lng);
-  const candidates = new Map<string, DuplicateCandidate>();
-
-  function upsert(candidate: DuplicateCandidate) {
-    const current = candidates.get(`${candidate.locationId}-${candidate.reason}`);
-    if (!current || current.score < candidate.score) {
-      candidates.set(`${candidate.locationId}-${candidate.reason}`, candidate);
-    }
-  }
-
-  existingLocations
-    .filter((location) => location.locationId !== input.locationId)
-    .forEach((location) => {
-      const label = location.customerName || location.address;
-      let matchedDuplicate = false;
-      if (
-        normalizedInputAddress &&
-        normalizeAddress(location.normalizedAddress ?? location.address) ===
-          normalizedInputAddress
-      ) {
-        matchedDuplicate = true;
-        upsert({
-          locationId: location.locationId,
-          reason: "same_address",
-          score: 100,
-          message: `${label} と住所が一致しています。`,
-        });
-      }
-
-      if (inputHasPoint) {
-        const distance = distanceMeters(
-          {
-            id: "input",
-            lat: input.lat as number,
-            lng: input.lng as number,
-            label: "入力地点",
-          },
-          locationToPoint(location),
-        );
-        if (distance <= 20) {
-          matchedDuplicate = true;
-          upsert({
-            locationId: location.locationId,
-            reason: "nearby",
-            score: 80,
-            message: `${label} が半径20m以内にあります。`,
-          });
-        }
-      }
-
-      if (isSimilarName(input.customerName, location.customerName)) {
-        matchedDuplicate = true;
-        upsert({
-          locationId: location.locationId,
-          reason: "similar_name",
-          score: 50,
-          message: `${label} と顧客名が似ています。`,
-        });
-      }
-
-      if (matchedDuplicate && location.status === "constructed") {
-        upsert({
-          locationId: location.locationId,
-          reason: "constructed",
-          score: 70,
-          message: `${label} は施工済みです。重複訪問に注意してください。`,
-        });
-      }
-
-      if (matchedDuplicate && location.status === "inspection_due") {
-        upsert({
-          locationId: location.locationId,
-          reason: "inspection_scheduled",
-          score: 60,
-          message: `${label} は点検予定があります。担当者と日程を確認してください。`,
-        });
-      }
-
-      if (matchedDuplicate && location.status === "do_not_visit") {
-        upsert({
-          locationId: location.locationId,
-          reason: "do_not_visit",
-          score: 100,
-          message: `${label} は訪問NGです。訪問予定に入れないでください。`,
-        });
-      }
-    });
-
-  return [...candidates.values()].sort((a, b) => b.score - a.score);
-}
-
-function findVisitWarningsForLocations(
-  locationIds: string[],
-  existingLocations: Location[],
-) {
-  const uniqueIds = [...new Set(locationIds)];
-  const warnings: DuplicateCandidate[] = [];
-  uniqueIds.forEach((locationId) => {
-    const location = existingLocations.find((item) => item.locationId === locationId);
-    if (!location) return;
-    warnings.push(
-      ...findDuplicateCandidates(
-        {
-          locationId: location.locationId,
-          customerName: location.customerName,
-          address: location.address,
-          lat: location.lat,
-          lng: location.lng,
-        },
-        existingLocations,
-      ),
-    );
-
-    const label = location.customerName || location.address;
-    if (location.status === "constructed") {
-      warnings.push({
-        locationId,
-        reason: "constructed",
-        score: 70,
-        message: `${label} は施工済みです。訪問目的を確認してください。`,
-      });
-    }
-    if (location.status === "inspection_due") {
-      warnings.push({
-        locationId,
-        reason: "inspection_scheduled",
-        score: 60,
-        message: `${label} は点検予定です。重複予定になっていないか確認してください。`,
-      });
-    }
-    if (location.status === "do_not_visit") {
-      warnings.push({
-        locationId,
-        reason: "do_not_visit",
-        score: 100,
-        message: `${label} は訪問NGです。予定追加前に管理者確認が必要です。`,
-      });
-    }
-  });
-
-  return warnings
-    .filter(
-      (warning, index, all) =>
-        all.findIndex(
-          (item) =>
-            item.locationId === warning.locationId &&
-            item.reason === warning.reason &&
-            item.message === warning.message,
-        ) === index,
-    )
-    .sort((a, b) => b.score - a.score);
-}
-
-function optimizeRoutePoints(points: RoutePoint[]): OptimizedRoute {
-  const [start, ...rest] = points;
-  const ordered = [start];
-  const remaining = [...rest];
-  let current = start;
-
-  while (remaining.length > 0) {
-    let nextIndex = 0;
-    let nextDistance = Number.POSITIVE_INFINITY;
-    remaining.forEach((point, index) => {
-      const distance = distanceMeters(current, point);
-      if (distance < nextDistance) {
-        nextDistance = distance;
-        nextIndex = index;
-      }
-    });
-    const [next] = remaining.splice(nextIndex, 1);
-    ordered.push(next);
-    current = next;
-  }
-
-  const totalDistanceMeters = ordered.reduce((sum, point, index) => {
-    const previous = ordered[index - 1];
-    return previous ? sum + distanceMeters(previous, point) : sum;
-  }, 0);
-
-  return {
-    orderedPointIds: ordered.map((point) => point.id),
-    totalDistanceMeters: Math.round(totalDistanceMeters),
-    totalDurationSeconds: Math.round(totalDistanceMeters / 1000 / 25 * 3600),
-    polyline: ordered
-      .map((point) => `${point.lng.toFixed(6)},${point.lat.toFixed(6)}`)
-      .join(";"),
-  };
-}
-
-function escapeCsvCell(value: unknown) {
-  const text = String(value ?? "");
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replaceAll('"', '""')}"`;
-  }
-  return text;
-}
-
-function locationsToCsv(locations: Location[]) {
-  const headers = [
-    "customerName",
-    "address",
-    "lat",
-    "lng",
-    "status",
-    "assignedUserId",
-    "constructionDate",
-    "nextInspectionDate",
-    "memo",
-    "tags",
-  ];
-  const rows = locations.map((location) =>
-    [
-      location.customerName ?? "",
-      location.address,
-      location.lat,
-      location.lng,
-      location.status,
-      location.assignedUserId ?? "",
-      location.constructionDate ?? "",
-      location.nextInspectionDate ?? "",
-      location.memo ?? "",
-      location.tags?.join("|") ?? "",
-    ].map(escapeCsvCell),
-  );
-
-  return [headers, ...rows].map((row) => row.join(",")).join("\n");
-}
-
-function parseCsv(text: string) {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let inQuotes = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    const next = text[index + 1];
-
-    if (char === '"' && inQuotes && next === '"') {
-      cell += '"';
-      index += 1;
-    } else if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === "," && !inQuotes) {
-      row.push(cell);
-      cell = "";
-    } else if ((char === "\n" || char === "\r") && !inQuotes) {
-      if (char === "\r" && next === "\n") index += 1;
-      row.push(cell);
-      if (row.some((value) => value.trim() !== "")) rows.push(row);
-      row = [];
-      cell = "";
-    } else {
-      cell += char;
-    }
-  }
-
-  row.push(cell);
-  if (row.some((value) => value.trim() !== "")) rows.push(row);
-  return rows;
-}
-
-function csvToLocations(text: string, actorUserId: string) {
-  const [headers, ...rows] = parseCsv(text);
-  if (!headers) return [];
-  const headerIndex = new Map(headers.map((header, index) => [header.trim(), index]));
-  const now = nowIso();
-
-  return rows
-    .map<Location | null>((row) => {
-      const value = (key: string) => row[headerIndex.get(key) ?? -1]?.trim() ?? "";
-      const address = value("address");
-      if (!address) return null;
-      const geocoded = mockGeocode(address);
-      const lat = Number(value("lat") || geocoded.lat);
-      const lng = Number(value("lng") || geocoded.lng);
-      const statusValue = value("status") as LocationStatus;
-      const status = locationStatusOptions.some((option) => option.value === statusValue)
-        ? statusValue
-        : "unvisited";
-
-      return {
-        locationId: `loc-${crypto.randomUUID()}`,
-        customerName: value("customerName") || undefined,
-        address,
-        normalizedAddress: normalizeAddress(address),
-        lat,
-        lng,
-        status,
-        assignedUserId: value("assignedUserId") || undefined,
-        constructionDate: value("constructionDate") || undefined,
-        nextInspectionDate: value("nextInspectionDate") || undefined,
-        memo: value("memo") || undefined,
-        tags: value("tags")
-          .split(/[|;]/)
-          .map((tag) => tag.trim())
-          .filter(Boolean),
-        createdBy: actorUserId,
-        updatedBy: actorUserId,
-        createdAt: now,
-        updatedAt: now,
-      } satisfies Location;
-    })
-    .filter((location): location is Location => Boolean(location));
 }
 
 function toDateString(date = new Date()) {
