@@ -4,10 +4,12 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
+  BarChart3,
   Brush,
   CalendarClock,
   CheckCircle2,
   ClipboardList,
+  Download,
   Eraser,
   Filter,
   LogOut,
@@ -19,12 +21,14 @@ import {
   Search,
   ShieldCheck,
   Trash2,
+  Upload,
   X,
   UserRound,
   UsersRound,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import {
+  ChangeEvent,
   FormEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent,
@@ -421,6 +425,123 @@ function optimizeRoutePoints(points: RoutePoint[]): OptimizedRoute {
   };
 }
 
+function escapeCsvCell(value: unknown) {
+  const text = String(value ?? "");
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+  return text;
+}
+
+function locationsToCsv(locations: Location[]) {
+  const headers = [
+    "customerName",
+    "address",
+    "lat",
+    "lng",
+    "status",
+    "assignedUserId",
+    "constructionDate",
+    "nextInspectionDate",
+    "memo",
+    "tags",
+  ];
+  const rows = locations.map((location) =>
+    [
+      location.customerName ?? "",
+      location.address,
+      location.lat,
+      location.lng,
+      location.status,
+      location.assignedUserId ?? "",
+      location.constructionDate ?? "",
+      location.nextInspectionDate ?? "",
+      location.memo ?? "",
+      location.tags?.join("|") ?? "",
+    ].map(escapeCsvCell),
+  );
+
+  return [headers, ...rows].map((row) => row.join(",")).join("\n");
+}
+
+function parseCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      if (row.some((value) => value.trim() !== "")) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+
+  row.push(cell);
+  if (row.some((value) => value.trim() !== "")) rows.push(row);
+  return rows;
+}
+
+function csvToLocations(text: string, actorUserId: string) {
+  const [headers, ...rows] = parseCsv(text);
+  if (!headers) return [];
+  const headerIndex = new Map(headers.map((header, index) => [header.trim(), index]));
+  const now = nowIso();
+
+  return rows
+    .map<Location | null>((row) => {
+      const value = (key: string) => row[headerIndex.get(key) ?? -1]?.trim() ?? "";
+      const address = value("address");
+      if (!address) return null;
+      const geocoded = mockGeocode(address);
+      const lat = Number(value("lat") || geocoded.lat);
+      const lng = Number(value("lng") || geocoded.lng);
+      const statusValue = value("status") as LocationStatus;
+      const status = locationStatusOptions.some((option) => option.value === statusValue)
+        ? statusValue
+        : "unvisited";
+
+      return {
+        locationId: `loc-${crypto.randomUUID()}`,
+        customerName: value("customerName") || undefined,
+        address,
+        normalizedAddress: normalizeAddress(address),
+        lat,
+        lng,
+        status,
+        assignedUserId: value("assignedUserId") || undefined,
+        constructionDate: value("constructionDate") || undefined,
+        nextInspectionDate: value("nextInspectionDate") || undefined,
+        memo: value("memo") || undefined,
+        tags: value("tags")
+          .split(/[|;]/)
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        createdBy: actorUserId,
+        updatedBy: actorUserId,
+        createdAt: now,
+        updatedAt: now,
+      } satisfies Location;
+    })
+    .filter((location): location is Location => Boolean(location));
+}
+
 function toDateString(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
@@ -478,6 +599,7 @@ export default function Home() {
   const [optimizedRoute, setOptimizedRoute] = useState<OptimizedRoute | null>(null);
   const [notesLoading, setNotesLoading] = useState(false);
   const [visitPlanMessage, setVisitPlanMessage] = useState("");
+  const [adminMessage, setAdminMessage] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -1101,6 +1223,45 @@ export default function Home() {
     setMessage("地点を削除しました。");
   }
 
+  function exportLocationsCsv() {
+    const csv = locationsToCsv(locations);
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `sales-map-locations-${toDateString()}.csv`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setAdminMessage(`${locations.length}件をCSVエクスポートしました。`);
+  }
+
+  async function importLocationsCsv(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !currentUser) return;
+
+    try {
+      const text = await file.text();
+      const imported = csvToLocations(text, currentUser.userId);
+      if (imported.length === 0) {
+        setAdminMessage("取り込める地点がありませんでした。");
+        return;
+      }
+
+      const storedLocations = readLocalRecords<Location>(
+        storageKeys.locations,
+        seedLocations as Location[],
+      );
+      writeLocalRecords(storageKeys.locations, [...storedLocations, ...imported]);
+      await loadLocations();
+      setAdminMessage(`${imported.length}件をCSVインポートしました。`);
+    } catch {
+      setAdminMessage("CSVインポートに失敗しました。列名を確認してください。");
+    }
+  }
+
   if (!currentUser) {
     return <LoginScreen onLogin={setCurrentUser} />;
   }
@@ -1209,6 +1370,29 @@ export default function Home() {
             onStatusChange={setStatusFilter}
             onAssigneeChange={setAssigneeFilter}
           />
+
+          {currentUser.role === "admin" ? (
+            <AdminPanel
+              locations={locations}
+              duplicateCandidates={locations
+                .flatMap((location) =>
+                  findDuplicateCandidates(
+                    {
+                      locationId: location.locationId,
+                      customerName: location.customerName,
+                      address: location.address,
+                      lat: location.lat,
+                      lng: location.lng,
+                    },
+                    locations,
+                  ),
+                )
+                .slice(0, 12)}
+              message={adminMessage}
+              onExportCsv={exportLocationsCsv}
+              onImportCsv={importLocationsCsv}
+            />
+          ) : null}
 
           <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
             <MockMap
@@ -1369,6 +1553,143 @@ function DashboardPanel({
             </div>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function AdminPanel({
+  locations,
+  duplicateCandidates,
+  message,
+  onExportCsv,
+  onImportCsv,
+}: {
+  locations: Location[];
+  duplicateCandidates: DuplicateCandidate[];
+  message: string;
+  onExportCsv: () => void;
+  onImportCsv: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  const statusCounts = locationStatusOptions
+    .map((option) => ({
+      ...option,
+      count: locations.filter((location) => location.status === option.value).length,
+    }))
+    .filter((item) => item.count > 0);
+  const userCounts = mockUsers
+    .filter((user) => user.role === "sales")
+    .map((user) => ({
+      user,
+      count: locations.filter((location) => location.assignedUserId === user.userId)
+        .length,
+    }));
+  const doNotVisitCount = locations.filter(
+    (location) => location.status === "do_not_visit",
+  ).length;
+  const inspectionCount = locations.filter(
+    (location) => location.status === "inspection_due",
+  ).length;
+
+  return (
+    <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <BarChart3 size={18} />
+            <h2 className="font-semibold">管理者画面</h2>
+          </div>
+          <p className="mt-1 text-sm text-zinc-600">
+            担当者別・ステータス別の状況確認とCSV入出力を行います。
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50">
+            <Upload size={16} />
+            CSVインポート
+            <input
+              className="hidden"
+              type="file"
+              accept=".csv,text/csv"
+              onChange={onImportCsv}
+            />
+          </label>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+            onClick={onExportCsv}
+          >
+            <Download size={16} />
+            CSVエクスポート
+          </button>
+        </div>
+      </div>
+
+      {message ? (
+        <p className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">
+          {message}
+        </p>
+      ) : null}
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <MiniStat icon={<MapPin size={18} />} label="地点総数" value={`${locations.length}`} />
+        <MiniStat icon={<ClipboardList size={18} />} label="点検予定" value={`${inspectionCount}`} />
+        <MiniStat icon={<AlertTriangle size={18} />} label="訪問NG" value={`${doNotVisitCount}`} />
+        <MiniStat
+          icon={<ShieldCheck size={18} />}
+          label="重複候補"
+          value={`${duplicateCandidates.length}`}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-md border border-zinc-200 p-3">
+          <h3 className="text-sm font-semibold">ステータス別件数</h3>
+          <div className="mt-3 space-y-2">
+            {statusCounts.map((item) => (
+              <div key={item.value} className="flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2 text-sm">
+                  <span
+                    className="size-3 rounded-full"
+                    style={{ backgroundColor: item.marker }}
+                  />
+                  {item.label}
+                </span>
+                <span className="font-semibold">{item.count}件</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-md border border-zinc-200 p-3">
+          <h3 className="text-sm font-semibold">担当者別件数</h3>
+          <div className="mt-3 space-y-2">
+            {userCounts.map(({ user, count }) => (
+              <div key={user.userId} className="flex items-center justify-between gap-3">
+                <span className="text-sm">{user.name}</span>
+                <span className="font-semibold">{count}件</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-md border border-zinc-200 p-3">
+        <h3 className="text-sm font-semibold">重複候補・注意一覧</h3>
+        {duplicateCandidates.length === 0 ? (
+          <p className="mt-2 text-sm text-zinc-600">現在、重複候補はありません。</p>
+        ) : (
+          <ul className="mt-3 grid gap-2">
+            {duplicateCandidates.map((candidate) => (
+              <li
+                key={`${candidate.locationId}-${candidate.reason}-${candidate.message}`}
+                className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-950"
+              >
+                {candidate.message}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </section>
   );
