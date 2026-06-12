@@ -1,0 +1,129 @@
+[
+  {
+    "locationId": "loc-001",
+    "customerName": "山田 太郎",
+    "address": "東京都世田谷区桜丘 1-12-8",
+    "normalizedAddress": "東京都世田谷区桜丘1-12-8",
+    "lat": 35.6427,
+    "lng": 139.6324,
+    "status": "constructed",
+    "assignedUserId": "sales-001",
+    "areaId": "area-setagaya",
+    "constructionDate": "2024-05-10",
+    "lastVisitDate": "2026-06-03",
+    "nextInspectionDate": "2026-07-15",
+    "memo": "床下点検済み。次回は薬剤保証の説明を予定。",
+    "tags": [
+      "定期点検",
+      "施工済み"
+    ],
+    "createdBy": "admin-001",
+    "updatedBy": "admin-001",
+    "createdAt": "2026-06-01T09:00:00.000Z",
+    "updatedAt": "2026-06-03T10:30:00.000Z"
+  },
+  {
+    "locationId": "loc-002",
+    "customerName": "佐藤 花子",
+    "address": "東京都世田谷区経堂 2-8-4",
+    "normalizedAddress": "東京都世田谷区経堂2-8-4",
+    "lat": 35.6519,
+    "lng": 139.6366,
+    "status": "inspection_due",
+    "assignedUserId": "sales-002",
+    "areaId": "area-setagaya",
+    "constructionDate": "2023-11-22",
+    "lastVisitDate": "2025-12-02",
+    "nextInspectionDate": "2026-06-18",
+    "memo": "半年点検の案内済み。午後希望。",
+    "tags": [
+      "点検予定"
+    ],
+    "createdBy": "admin-001",
+    "updatedBy": "admin-001",
+    "createdAt": "2026-06-01T09:10:00.000Z",
+    "updatedAt": "2026-06-04T08:00:00.000Z"
+  },
+  {
+    "locationId": "loc-003",
+    "customerName": "田中 建設",
+    "address": "東京都杉並区高井戸西 1-5-3",
+    "normalizedAddress": "東京都杉並区高井戸西1-5-3",
+    "lat": 35.6822,
+    "lng": 139.6152,
+    "status": "prospect",
+    "assignedUserId": "sales-003",
+    "areaId": "area-suginami",
+    "lastVisitDate": "2026-06-10",
+    "memo": "管理物件の一括点検に興味あり。見積もり待ち。",
+    "tags": [
+      "法人",
+      "見込み"
+    ],
+    "createdBy": "sales-003",
+    "updatedBy": "sales-003",
+    "createdAt": "2026-06-05T02:15:00.000Z",
+    "updatedAt": "2026-06-10T06:30:00.000Z"
+  },
+  {
+    "locationId": "loc-004",
+    "customerName": "鈴木 一郎",
+    "address": "東京都調布市仙川町 3-2-1",
+    "normalizedAddress": "東京都調布市仙川町3-2-1",
+    "lat": 35.6626,
+    "lng": 139.5845,
+    "status": "absent",
+    "assignedUserId": "sales-001",
+    "areaId": "area-chofu",
+    "lastVisitDate": "2026-06-12",
+    "memo": "午前不在。夕方再訪問候補。",
+    "tags": [
+      "再訪問"
+    ],
+    "createdBy": "sales-001",
+    "updatedBy": "sales-001",
+    "createdAt": "2026-06-07T01:20:00.000Z",
+    "updatedAt": "2026-06-12T02:50:00.000Z"
+  },
+  {
+    "locationId": "loc-005",
+    "customerName": "高橋 美咲",
+    "address": "東京都三鷹市下連雀 4-9-6",
+    "normalizedAddress": "東京都三鷹市下連雀4-9-6",
+    "lat": 35.694,
+    "lng": 139.5608,
+    "status": "do_not_visit",
+    "assignedUserId": "sales-002",
+    "areaId": "area-mitaka",
+    "lastVisitDate": "2026-05-28",
+    "memo": "訪問NG。電話連絡も管理者確認が必要。",
+    "tags": [
+      "訪問NG",
+      "注意"
+    ],
+    "createdBy": "admin-001",
+    "updatedBy": "admin-001",
+    "createdAt": "2026-06-01T09:20:00.000Z",
+    "updatedAt": "2026-06-01T09:20:00.000Z"
+  },
+  {
+    "locationId": "loc-006",
+    "customerName": "小林 修",
+    "address": "東京都世田谷区船橋 5-14-2",
+    "normalizedAddress": "東京都世田谷区船橋5-14-2",
+    "lat": 35.6593,
+    "lng": 139.6221,
+    "status": "unvisited",
+    "assignedUserId": "sales-003",
+    "areaId": "area-setagaya",
+    "memo": "近隣施工からの紹介。初回訪問候補。",
+    "tags": [
+      "紹介",
+      "未訪問"
+    ],
+    "createdBy": "admin-001",
+    "updatedBy": "admin-001",
+    "createdAt": "2026-06-08T03:00:00.000Z",
+    "updatedAt": "2026-06-08T03:00:00.000Z"
+  }
+]
