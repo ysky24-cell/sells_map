@@ -1,1 +1,116 @@
-[]
+[
+  {
+    "planId": "plan-2026-06-12-sales-001",
+    "userId": "sales-001",
+    "date": "2026-06-12",
+    "startLocation": {
+      "lat": 35.6462,
+      "lng": 139.6534,
+      "label": "世田谷営業所"
+    },
+    "endLocation": {
+      "lat": 35.6462,
+      "lng": 139.6534,
+      "label": "世田谷営業所"
+    },
+    "status": "draft",
+    "memo": "ブラウザの今日表示に合わせた世田谷・調布方面のサンプル訪問予定。",
+    "createdAt": "2026-06-12T00:00:00.000Z",
+    "updatedAt": "2026-06-12T00:00:00.000Z"
+  },
+  {
+    "planId": "plan-2026-06-12-sales-002",
+    "userId": "sales-002",
+    "date": "2026-06-12",
+    "startLocation": {
+      "lat": 35.6812,
+      "lng": 139.5601,
+      "label": "三鷹駅"
+    },
+    "endLocation": {
+      "lat": 35.6812,
+      "lng": 139.5601,
+      "label": "三鷹駅"
+    },
+    "status": "draft",
+    "memo": "ブラウザの今日表示に合わせた三鷹・世田谷方面のサンプル訪問予定。",
+    "createdAt": "2026-06-12T00:05:00.000Z",
+    "updatedAt": "2026-06-12T00:05:00.000Z"
+  },
+  {
+    "planId": "plan-2026-06-12-sales-003",
+    "userId": "sales-003",
+    "date": "2026-06-12",
+    "startLocation": {
+      "lat": 35.704,
+      "lng": 139.6205,
+      "label": "荻窪駅"
+    },
+    "endLocation": {
+      "lat": 35.704,
+      "lng": 139.6205,
+      "label": "荻窪駅"
+    },
+    "status": "draft",
+    "memo": "ブラウザの今日表示に合わせた杉並方面のサンプル訪問予定。",
+    "createdAt": "2026-06-12T00:10:00.000Z",
+    "updatedAt": "2026-06-12T00:10:00.000Z"
+  },
+  {
+    "planId": "plan-2026-06-13-sales-001",
+    "userId": "sales-001",
+    "date": "2026-06-13",
+    "startLocation": {
+      "lat": 35.6462,
+      "lng": 139.6534,
+      "label": "世田谷営業所"
+    },
+    "endLocation": {
+      "lat": 35.6462,
+      "lng": 139.6534,
+      "label": "世田谷営業所"
+    },
+    "status": "draft",
+    "memo": "世田谷・調布方面のサンプル訪問予定。",
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "planId": "plan-2026-06-13-sales-002",
+    "userId": "sales-002",
+    "date": "2026-06-13",
+    "startLocation": {
+      "lat": 35.6812,
+      "lng": 139.5601,
+      "label": "三鷹駅"
+    },
+    "endLocation": {
+      "lat": 35.6812,
+      "lng": 139.5601,
+      "label": "三鷹駅"
+    },
+    "status": "draft",
+    "memo": "三鷹・世田谷方面のサンプル訪問予定。",
+    "createdAt": "2026-06-13T00:05:00.000Z",
+    "updatedAt": "2026-06-13T00:05:00.000Z"
+  },
+  {
+    "planId": "plan-2026-06-13-sales-003",
+    "userId": "sales-003",
+    "date": "2026-06-13",
+    "startLocation": {
+      "lat": 35.704,
+      "lng": 139.6205,
+      "label": "荻窪駅"
+    },
+    "endLocation": {
+      "lat": 35.704,
+      "lng": 139.6205,
+      "label": "荻窪駅"
+    },
+    "status": "draft",
+    "memo": "杉並方面のサンプル訪問予定。",
+    "createdAt": "2026-06-13T00:10:00.000Z",
+    "updatedAt": "2026-06-13T00:10:00.000Z"
+  }
+]

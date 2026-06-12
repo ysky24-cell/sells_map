@@ -31,5 +31,104 @@
     "nextActionDate": "2026-06-20",
     "createdAt": "2026-06-10T06:30:00.000Z",
     "updatedAt": "2026-06-10T06:30:00.000Z"
+  },
+  {
+    "visitId": "visit-004",
+    "locationId": "loc-007",
+    "userId": "sales-001",
+    "visitedAt": "2026-06-11T04:20:00.000Z",
+    "result": "visited",
+    "memo": "羽アリ相談を確認。床下点検の候補日を聞き取り。",
+    "nextActionDate": "2026-06-16",
+    "createdAt": "2026-06-11T04:20:00.000Z",
+    "updatedAt": "2026-06-11T04:20:00.000Z"
+  },
+  {
+    "visitId": "visit-005",
+    "locationId": "loc-009",
+    "userId": "sales-002",
+    "visitedAt": "2026-06-09T05:40:00.000Z",
+    "result": "prospect",
+    "memo": "見積希望。薬剤施工と保証内容を比較したいとのこと。",
+    "nextActionDate": "2026-06-15",
+    "createdAt": "2026-06-09T05:40:00.000Z",
+    "updatedAt": "2026-06-09T05:40:00.000Z"
+  },
+  {
+    "visitId": "visit-006",
+    "locationId": "loc-010",
+    "userId": "sales-001",
+    "visitedAt": "2026-06-08T05:00:00.000Z",
+    "result": "contracted",
+    "memo": "契約書回収済み。施工日は管理者側で調整。",
+    "nextActionDate": "2026-06-18",
+    "createdAt": "2026-06-08T05:00:00.000Z",
+    "updatedAt": "2026-06-08T05:00:00.000Z"
+  },
+  {
+    "visitId": "visit-007",
+    "locationId": "loc-012",
+    "userId": "sales-003",
+    "visitedAt": "2026-06-07T07:45:00.000Z",
+    "result": "prospect",
+    "memo": "営業時間外の点検を希望。見積前に現地確認が必要。",
+    "nextActionDate": "2026-06-14",
+    "createdAt": "2026-06-07T07:45:00.000Z",
+    "updatedAt": "2026-06-07T07:45:00.000Z"
+  },
+  {
+    "visitId": "visit-008",
+    "locationId": "loc-013",
+    "userId": "sales-003",
+    "visitedAt": "2026-06-12T03:20:00.000Z",
+    "result": "absent",
+    "memo": "不在。案内投函済み。週末に再訪問候補。",
+    "nextActionDate": "2026-06-14",
+    "createdAt": "2026-06-12T03:20:00.000Z",
+    "updatedAt": "2026-06-12T03:20:00.000Z"
+  },
+  {
+    "visitId": "visit-009",
+    "locationId": "loc-016",
+    "userId": "sales-002",
+    "visitedAt": "2026-06-06T02:00:00.000Z",
+    "result": "visited",
+    "memo": "蟻道を確認。床下点検の提案を実施。",
+    "nextActionDate": "2026-06-17",
+    "createdAt": "2026-06-06T02:00:00.000Z",
+    "updatedAt": "2026-06-06T02:00:00.000Z"
+  },
+  {
+    "visitId": "visit-010",
+    "locationId": "loc-017",
+    "userId": "sales-002",
+    "visitedAt": "2026-06-05T05:30:00.000Z",
+    "result": "lost",
+    "memo": "他社契約済み。次年度点検時期に再接触。",
+    "nextActionDate": "2027-05-01",
+    "createdAt": "2026-06-05T05:30:00.000Z",
+    "updatedAt": "2026-06-05T05:30:00.000Z"
+  },
+  {
+    "visitId": "visit-011",
+    "locationId": "loc-019",
+    "userId": "sales-002",
+    "visitedAt": "2026-06-11T07:00:00.000Z",
+    "result": "contracted",
+    "memo": "施工日候補を2日提示。家族確認後に確定予定。",
+    "nextActionDate": "2026-06-14",
+    "createdAt": "2026-06-11T07:00:00.000Z",
+    "updatedAt": "2026-06-11T07:00:00.000Z"
+  },
+  {
+    "visitId": "visit-012",
+    "locationId": "loc-020",
+    "userId": "sales-003",
+    "visitedAt": "2026-06-08T06:40:00.000Z",
+    "result": "prospect",
+    "memo": "管理組合理事会で検討。資料送付を依頼された。",
+    "nextActionDate": "2026-06-19",
+    "createdAt": "2026-06-08T06:40:00.000Z",
+    "updatedAt": "2026-06-08T06:40:00.000Z"
   }
 ]

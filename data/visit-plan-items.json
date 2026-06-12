@@ -1,1 +1,274 @@
-[]
+[
+  {
+    "planItemId": "plan-item-011",
+    "planId": "plan-2026-06-12-sales-001",
+    "locationId": "loc-004",
+    "order": 1,
+    "priority": "high",
+    "preferredTimeWindow": {
+      "start": "10:00",
+      "end": "11:30"
+    },
+    "memo": "前回不在。午前中に再訪問。",
+    "createdAt": "2026-06-12T00:00:00.000Z",
+    "updatedAt": "2026-06-12T00:00:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-012",
+    "planId": "plan-2026-06-12-sales-001",
+    "locationId": "loc-008",
+    "order": 2,
+    "priority": "high",
+    "preferredTimeWindow": {
+      "start": "13:00",
+      "end": "14:30"
+    },
+    "memo": "点検予定日を過ぎているため優先。",
+    "createdAt": "2026-06-12T00:00:00.000Z",
+    "updatedAt": "2026-06-12T00:00:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-013",
+    "planId": "plan-2026-06-12-sales-001",
+    "locationId": "loc-015",
+    "order": 3,
+    "priority": "medium",
+    "preferredTimeWindow": {
+      "start": "15:00",
+      "end": "16:30"
+    },
+    "memo": "新規訪問候補。",
+    "createdAt": "2026-06-12T00:00:00.000Z",
+    "updatedAt": "2026-06-12T00:00:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-014",
+    "planId": "plan-2026-06-12-sales-001",
+    "locationId": "loc-023",
+    "order": 4,
+    "priority": "low",
+    "memo": "近接地点の確認用。",
+    "createdAt": "2026-06-12T00:00:00.000Z",
+    "updatedAt": "2026-06-12T00:00:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-015",
+    "planId": "plan-2026-06-12-sales-002",
+    "locationId": "loc-018",
+    "order": 1,
+    "priority": "medium",
+    "preferredTimeWindow": {
+      "start": "10:00",
+      "end": "12:00"
+    },
+    "memo": "点検予定の連絡から開始。",
+    "createdAt": "2026-06-12T00:05:00.000Z",
+    "updatedAt": "2026-06-12T00:05:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-016",
+    "planId": "plan-2026-06-12-sales-002",
+    "locationId": "loc-019",
+    "order": 2,
+    "priority": "high",
+    "preferredTimeWindow": {
+      "start": "13:00",
+      "end": "14:00"
+    },
+    "memo": "施工日候補の確定確認。",
+    "createdAt": "2026-06-12T00:05:00.000Z",
+    "updatedAt": "2026-06-12T00:05:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-017",
+    "planId": "plan-2026-06-12-sales-002",
+    "locationId": "loc-009",
+    "order": 3,
+    "priority": "medium",
+    "preferredTimeWindow": {
+      "start": "15:00",
+      "end": "16:30"
+    },
+    "memo": "見積フォロー。",
+    "createdAt": "2026-06-12T00:05:00.000Z",
+    "updatedAt": "2026-06-12T00:05:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-018",
+    "planId": "plan-2026-06-12-sales-003",
+    "locationId": "loc-011",
+    "order": 1,
+    "priority": "high",
+    "preferredTimeWindow": {
+      "start": "09:30",
+      "end": "10:30"
+    },
+    "memo": "紹介案件。初回訪問。",
+    "createdAt": "2026-06-12T00:10:00.000Z",
+    "updatedAt": "2026-06-12T00:10:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-019",
+    "planId": "plan-2026-06-12-sales-003",
+    "locationId": "loc-014",
+    "order": 2,
+    "priority": "medium",
+    "preferredTimeWindow": {
+      "start": "13:30",
+      "end": "15:00"
+    },
+    "memo": "保証点検の案内。",
+    "createdAt": "2026-06-12T00:10:00.000Z",
+    "updatedAt": "2026-06-12T00:10:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-020",
+    "planId": "plan-2026-06-12-sales-003",
+    "locationId": "loc-013",
+    "order": 3,
+    "priority": "medium",
+    "preferredTimeWindow": {
+      "start": "16:00",
+      "end": "17:30"
+    },
+    "memo": "前回不在の再訪問。",
+    "createdAt": "2026-06-12T00:10:00.000Z",
+    "updatedAt": "2026-06-12T00:10:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-001",
+    "planId": "plan-2026-06-13-sales-001",
+    "locationId": "loc-004",
+    "order": 1,
+    "priority": "high",
+    "preferredTimeWindow": {
+      "start": "10:00",
+      "end": "11:30"
+    },
+    "memo": "前回不在。午前中に再訪問。",
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-002",
+    "planId": "plan-2026-06-13-sales-001",
+    "locationId": "loc-008",
+    "order": 2,
+    "priority": "high",
+    "preferredTimeWindow": {
+      "start": "13:00",
+      "end": "14:30"
+    },
+    "memo": "点検予定日を過ぎているため優先。",
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-003",
+    "planId": "plan-2026-06-13-sales-001",
+    "locationId": "loc-015",
+    "order": 3,
+    "priority": "medium",
+    "preferredTimeWindow": {
+      "start": "15:00",
+      "end": "16:30"
+    },
+    "memo": "新規訪問候補。",
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-004",
+    "planId": "plan-2026-06-13-sales-001",
+    "locationId": "loc-023",
+    "order": 4,
+    "priority": "low",
+    "memo": "近接地点の確認用。",
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-005",
+    "planId": "plan-2026-06-13-sales-002",
+    "locationId": "loc-018",
+    "order": 1,
+    "priority": "medium",
+    "preferredTimeWindow": {
+      "start": "10:00",
+      "end": "12:00"
+    },
+    "memo": "午後希望だが午前連絡から開始。",
+    "createdAt": "2026-06-13T00:05:00.000Z",
+    "updatedAt": "2026-06-13T00:05:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-006",
+    "planId": "plan-2026-06-13-sales-002",
+    "locationId": "loc-019",
+    "order": 2,
+    "priority": "high",
+    "preferredTimeWindow": {
+      "start": "13:00",
+      "end": "14:00"
+    },
+    "memo": "施工日候補の確定確認。",
+    "createdAt": "2026-06-13T00:05:00.000Z",
+    "updatedAt": "2026-06-13T00:05:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-007",
+    "planId": "plan-2026-06-13-sales-002",
+    "locationId": "loc-009",
+    "order": 3,
+    "priority": "medium",
+    "preferredTimeWindow": {
+      "start": "15:00",
+      "end": "16:30"
+    },
+    "memo": "見積フォロー。",
+    "createdAt": "2026-06-13T00:05:00.000Z",
+    "updatedAt": "2026-06-13T00:05:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-008",
+    "planId": "plan-2026-06-13-sales-003",
+    "locationId": "loc-011",
+    "order": 1,
+    "priority": "high",
+    "preferredTimeWindow": {
+      "start": "09:30",
+      "end": "10:30"
+    },
+    "memo": "紹介案件。初回訪問。",
+    "createdAt": "2026-06-13T00:10:00.000Z",
+    "updatedAt": "2026-06-13T00:10:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-009",
+    "planId": "plan-2026-06-13-sales-003",
+    "locationId": "loc-014",
+    "order": 2,
+    "priority": "medium",
+    "preferredTimeWindow": {
+      "start": "13:30",
+      "end": "15:00"
+    },
+    "memo": "保証点検の案内。",
+    "createdAt": "2026-06-13T00:10:00.000Z",
+    "updatedAt": "2026-06-13T00:10:00.000Z"
+  },
+  {
+    "planItemId": "plan-item-010",
+    "planId": "plan-2026-06-13-sales-003",
+    "locationId": "loc-013",
+    "order": 3,
+    "priority": "medium",
+    "preferredTimeWindow": {
+      "start": "16:00",
+      "end": "17:30"
+    },
+    "memo": "前回不在の再訪問。",
+    "createdAt": "2026-06-13T00:10:00.000Z",
+    "updatedAt": "2026-06-13T00:10:00.000Z"
+  }
+]

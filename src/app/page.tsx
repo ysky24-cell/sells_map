@@ -142,42 +142,79 @@ function writeLocalRecords<T>(key: string, records: T[]) {
   window.localStorage.setItem(key, JSON.stringify(records));
 }
 
+function readSeededRecords<T>(
+  key: string,
+  seed: T[],
+  getId: (record: T) => string,
+): T[] {
+  const records = readLocalRecords<T>(key, seed);
+  if (typeof window === "undefined") return records;
+
+  const storedIds = new Set(records.map(getId));
+  const missingSeedRecords = seed.filter((record) => !storedIds.has(getId(record)));
+  if (missingSeedRecords.length === 0) return records;
+
+  const merged = [...records, ...missingSeedRecords];
+  writeLocalRecords(key, merged);
+  return merged;
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
 
 function listStoredLocations() {
-  return readLocalRecords<Location>(
+  return readSeededRecords<Location>(
     storageKeys.locations,
     seedLocations as Location[],
+    (location) => location.locationId,
   )
     .filter((location) => !location.deletedAt)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 function listStoredNotes(locationId: string) {
-  return readLocalRecords<HandwrittenNote>(
+  return readSeededRecords<HandwrittenNote>(
     storageKeys.notes,
     seedNotes as HandwrittenNote[],
+    (note) => note.noteId,
   )
     .filter((note) => note.locationId === locationId && !note.deletedAt)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 function listStoredVisitRecords(locationId: string) {
-  return readLocalRecords<VisitRecord>(
+  return readSeededRecords<VisitRecord>(
     storageKeys.visitRecords,
     seedVisitRecords as VisitRecord[],
+    (record) => record.visitId,
   )
     .filter((record) => record.locationId === locationId)
     .sort((a, b) => b.visitedAt.localeCompare(a.visitedAt));
 }
 
 function listStoredAllVisitRecords() {
-  return readLocalRecords<VisitRecord>(
+  return readSeededRecords<VisitRecord>(
     storageKeys.visitRecords,
     seedVisitRecords as VisitRecord[],
+    (record) => record.visitId,
   ).sort((a, b) => b.visitedAt.localeCompare(a.visitedAt));
+}
+
+function listStoredAllVisitPlans() {
+  return readSeededRecords<VisitPlan>(
+    storageKeys.visitPlans,
+    seedVisitPlans as VisitPlan[],
+    (plan) => plan.planId,
+  );
+}
+
+function listStoredAllVisitPlanItems() {
+  return readSeededRecords<VisitPlanItem>(
+    storageKeys.visitPlanItems,
+    seedVisitPlanItems as VisitPlanItem[],
+    (item) => item.planItemId,
+  );
 }
 
 function withVisitPlanItems(
@@ -196,20 +233,18 @@ function listStoredVisitPlans(params: {
   userId?: string;
   date?: string;
 }): VisitPlanWithItems[] {
-  const plans = readLocalRecords<VisitPlan>(
-    storageKeys.visitPlans,
-    seedVisitPlans as VisitPlan[],
-  );
-  const items = readLocalRecords<VisitPlanItem>(
-    storageKeys.visitPlanItems,
-    seedVisitPlanItems as VisitPlanItem[],
-  );
+  const plans = listStoredAllVisitPlans();
+  const items = listStoredAllVisitPlanItems();
 
   return plans
     .filter((plan) => !params.userId || plan.userId === params.userId)
     .filter((plan) => !params.date || plan.date === params.date)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .map((plan) => withVisitPlanItems(plan, items));
+    .map((plan) => withVisitPlanItems(plan, items))
+    .sort(
+      (a, b) =>
+        b.items.length - a.items.length ||
+        b.updatedAt.localeCompare(a.updatedAt),
+    );
 }
 
 function toDateString(date = new Date()) {
@@ -318,14 +353,8 @@ export default function Home() {
       : currentUser?.userId ?? visitPlanUserId;
 
   async function ensureVisitPlan() {
-    const plans = readLocalRecords<VisitPlan>(
-      storageKeys.visitPlans,
-      seedVisitPlans as VisitPlan[],
-    );
-    const items = readLocalRecords<VisitPlanItem>(
-      storageKeys.visitPlanItems,
-      seedVisitPlanItems as VisitPlanItem[],
-    );
+    const plans = listStoredAllVisitPlans();
+    const items = listStoredAllVisitPlanItems();
     const existing = plans.find(
       (plan) =>
         plan.userId === effectiveVisitPlanUserId && plan.date === visitPlanDate,
@@ -358,10 +387,7 @@ export default function Home() {
     const plan = visitPlan ?? (await ensureVisitPlan());
     if (!plan) return;
 
-    const items = readLocalRecords<VisitPlanItem>(
-      storageKeys.visitPlanItems,
-      seedVisitPlanItems as VisitPlanItem[],
-    );
+    const items = listStoredAllVisitPlanItems();
     const exists = items.some(
       (item) =>
         item.planId === plan.planId && item.locationId === location.locationId,
@@ -415,10 +441,7 @@ export default function Home() {
       return;
     }
 
-    const items = readLocalRecords<VisitPlanItem>(
-      storageKeys.visitPlanItems,
-      seedVisitPlanItems as VisitPlanItem[],
-    );
+    const items = listStoredAllVisitPlanItems();
     const now = nowIso();
     let nextOrder =
       Math.max(
@@ -553,10 +576,7 @@ export default function Home() {
 
   async function removeVisitPlanItem(planItemId: string) {
     if (!visitPlan) return;
-    const allItems = readLocalRecords<VisitPlanItem>(
-      storageKeys.visitPlanItems,
-      seedVisitPlanItems as VisitPlanItem[],
-    );
+    const allItems = listStoredAllVisitPlanItems();
     const remaining = allItems
       .filter(
         (item) =>
@@ -588,10 +608,7 @@ export default function Home() {
     const orderMap = new Map(
       moved.map((item, itemIndex) => [item.planItemId, itemIndex + 1]),
     );
-    const allItems = readLocalRecords<VisitPlanItem>(
-      storageKeys.visitPlanItems,
-      seedVisitPlanItems as VisitPlanItem[],
-    ).map((item) =>
+    const allItems = listStoredAllVisitPlanItems().map((item) =>
       item.planId === visitPlan.planId && orderMap.has(item.planItemId)
         ? {
             ...item,
@@ -632,10 +649,7 @@ export default function Home() {
     const orderMap = new Map(
       route.orderedPointIds.map((locationId, index) => [locationId, index + 1]),
     );
-    const allItems = readLocalRecords<VisitPlanItem>(
-      storageKeys.visitPlanItems,
-      seedVisitPlanItems as VisitPlanItem[],
-    ).map((item) =>
+    const allItems = listStoredAllVisitPlanItems().map((item) =>
       item.planId === visitPlan.planId && orderMap.has(item.locationId)
         ? {
             ...item,
@@ -644,10 +658,7 @@ export default function Home() {
           }
         : item,
     );
-    const allPlans = readLocalRecords<VisitPlan>(
-      storageKeys.visitPlans,
-      seedVisitPlans as VisitPlan[],
-    ).map((plan) =>
+    const allPlans = listStoredAllVisitPlans().map((plan) =>
       plan.planId === visitPlan.planId
         ? { ...plan, status: "optimized" as const, updatedAt: nowIso() }
         : plan,
