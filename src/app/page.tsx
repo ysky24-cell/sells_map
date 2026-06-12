@@ -14,6 +14,8 @@ import {
   Filter,
   LogOut,
   MapPin,
+  Maximize2,
+  Minimize2,
   Pencil,
   Plus,
   Route,
@@ -596,6 +598,7 @@ export default function Home() {
   const [visitPlanUserId, setVisitPlanUserId] = useState("sales-001");
   const [mapPlanSelectionMode, setMapPlanSelectionMode] = useState(false);
   const [mapSelectedLocationIds, setMapSelectedLocationIds] = useState<string[]>([]);
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [optimizedRoute, setOptimizedRoute] = useState<OptimizedRoute | null>(null);
   const [notesLoading, setNotesLoading] = useState(false);
   const [visitPlanMessage, setVisitPlanMessage] = useState("");
@@ -1035,6 +1038,19 @@ export default function Home() {
   }, [selectedLocationId]);
 
   useEffect(() => {
+    if (!isMapFullscreen) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsMapFullscreen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isMapFullscreen]);
+
+  useEffect(() => {
     if (!currentUser) return;
     let cancelled = false;
     Promise.resolve(
@@ -1404,6 +1420,7 @@ export default function Home() {
               onSelect={setSelectedId}
               onTogglePlanSelection={toggleMapPlanSelection}
               onMapPick={setFormLocationFromMap}
+              onOpenFullscreen={() => setIsMapFullscreen(true)}
               isLoading={isLoading}
             />
             <LocationDetail
@@ -1426,6 +1443,50 @@ export default function Home() {
           />
         </section>
       </div>
+
+      {isMapFullscreen ? (
+        <div className="fixed inset-0 z-50 bg-[#f7f7f2] p-3 sm:p-5">
+          <div className="flex h-full flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-3 shadow-sm">
+              <div>
+                <p className="text-sm font-medium text-zinc-500">
+                  地図作業モード
+                </p>
+                <h2 className="text-lg font-semibold">
+                  {mapPlanSelectionMode
+                    ? `訪問予定の地点を選択中: ${mapSelectedLocationIds.length}件`
+                    : selectedLocation
+                      ? selectedLocation.customerName ?? selectedLocation.address
+                      : "地点を選択できます"}
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                onClick={() => setIsMapFullscreen(false)}
+              >
+                <Minimize2 size={16} />
+                通常画面に戻る
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <MockMap
+                locations={filteredLocations}
+                selectedId={selectedLocation?.locationId ?? null}
+                planSelectionMode={mapPlanSelectionMode}
+                planSelectedLocationIds={mapSelectedLocationIds}
+                routeLocationIds={optimizedRoute?.orderedPointIds ?? []}
+                onSelect={setSelectedId}
+                onTogglePlanSelection={toggleMapPlanSelection}
+                onMapPick={setFormLocationFromMap}
+                onCloseFullscreen={() => setIsMapFullscreen(false)}
+                isFullscreen
+                isLoading={isLoading}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -2094,6 +2155,9 @@ function MockMap({
   onSelect,
   onTogglePlanSelection,
   onMapPick,
+  onOpenFullscreen,
+  onCloseFullscreen,
+  isFullscreen = false,
   isLoading,
 }: {
   locations: Location[];
@@ -2104,6 +2168,9 @@ function MockMap({
   onSelect: (locationId: string) => void;
   onTogglePlanSelection: (locationId: string) => void;
   onMapPick: (point: { lat: number; lng: number }) => void;
+  onOpenFullscreen?: () => void;
+  onCloseFullscreen?: () => void;
+  isFullscreen?: boolean;
   isLoading: boolean;
 }) {
   const bounds = useMemo(() => {
@@ -2161,7 +2228,9 @@ function MockMap({
 
   return (
     <section
-      className={`relative min-h-[520px] overflow-hidden rounded-lg border border-zinc-200 bg-[#e9efe7] shadow-sm ${
+      className={`relative overflow-hidden rounded-lg border border-zinc-200 bg-[#e9efe7] shadow-sm ${
+        isFullscreen ? "h-full min-h-[520px]" : "min-h-[520px]"
+      } ${
         planSelectionMode ? "cursor-default" : "cursor-crosshair"
       }`}
       onClick={handleMapClick}
@@ -2209,7 +2278,7 @@ function MockMap({
         </svg>
       ) : null}
       <div
-        className="absolute inset-x-4 top-4 flex items-center justify-between rounded-md border border-zinc-200 bg-white/95 px-3 py-2 text-sm shadow-sm"
+        className="absolute inset-x-4 top-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white/95 px-3 py-2 text-sm shadow-sm"
         onClick={(event) => event.stopPropagation()}
       >
         <span className="font-medium">MockMapProvider</span>
@@ -2220,6 +2289,27 @@ function MockMap({
               ? `${locations.length}件表示・ピンを複数選択`
               : `${locations.length}件表示・地図タップで位置指定`}
         </span>
+        {isFullscreen ? (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 py-1 font-medium hover:bg-zinc-50"
+            onClick={onCloseFullscreen}
+            aria-label="地図を戻す"
+          >
+            <Minimize2 size={15} />
+            戻す
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 py-1 font-medium hover:bg-zinc-50"
+            onClick={onOpenFullscreen}
+            aria-label="地図を全画面にする"
+          >
+            <Maximize2 size={15} />
+            全画面
+          </button>
+        )}
       </div>
 
       {planSelectionMode ? (
