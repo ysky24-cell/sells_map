@@ -1575,7 +1575,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#f7f7f2] text-zinc-950">
-      <header className="border-b border-zinc-200 bg-white">
+      <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/95 shadow-sm backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex items-center gap-3">
@@ -1632,7 +1632,7 @@ export default function Home() {
             municipalities={visibleMunicipalities}
             decisionLogs={decisionLogs}
           />
-          <div id="location-input" className="scroll-mt-4">
+          <div id="location-input" className="scroll-mt-40 lg:scroll-mt-28">
             <LocationForm
               currentUser={currentUser}
               form={form}
@@ -1647,7 +1647,7 @@ export default function Home() {
               onSubmit={submitLocation}
             />
           </div>
-          <div id="visit-plan" className="scroll-mt-4">
+          <div id="visit-plan" className="scroll-mt-40 lg:scroll-mt-28">
             <VisitPlanPanel
               currentUser={currentUser}
               date={visitPlanDate}
@@ -1742,7 +1742,7 @@ export default function Home() {
           ) : null}
 
           <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_360px]">
-            <div id="map-view" className="min-w-0 scroll-mt-4">
+            <div id="map-view" className="min-w-0 scroll-mt-40 lg:scroll-mt-28">
               <MockMap
                 locations={filteredLocations}
                 jaAreas={jaAreas}
@@ -2207,7 +2207,7 @@ function AdminPanel({
 
   return (
     <>
-      <div id="admin-kpi" className="scroll-mt-4">
+      <div id="admin-kpi" className="scroll-mt-40 lg:scroll-mt-28">
         <SalesKpiDashboard
           locations={locations}
           visitRecords={visitRecords}
@@ -2217,7 +2217,7 @@ function AdminPanel({
         />
       </div>
 
-      <div id="admin-knowledge" className="scroll-mt-4">
+      <div id="admin-knowledge" className="scroll-mt-40 lg:scroll-mt-28">
         <DecisionKnowledgeDashboard
           decisionLogs={decisionLogs}
           locations={locations}
@@ -2229,7 +2229,7 @@ function AdminPanel({
 
       <section
         id="system-admin"
-        className="scroll-mt-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm"
+        className="scroll-mt-40 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm lg:scroll-mt-28"
       >
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
