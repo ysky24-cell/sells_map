@@ -108,6 +108,45 @@ export type VisitRecordInput = {
   nextActionDate?: string;
 };
 
+export type DecisionLogPriority = "low" | "medium" | "high";
+export type DecisionLogRiskLevel = "low" | "medium" | "high";
+export type DecisionLogAdoptionStatus = "proposed" | "adopted" | "not_adopted";
+
+export type DecisionLogHistoryEntry = {
+  historyId: string;
+  actorUserId: string;
+  action: "created" | "admin_update";
+  message: string;
+  createdAt: string;
+};
+
+export type DecisionLog = {
+  decisionLogId: string;
+  locationId: string;
+  userId: string;
+  undecidedReason: string;
+  riskLevel: DecisionLogRiskLevel;
+  countermeasure: string;
+  adoptionStatus: DecisionLogAdoptionStatus;
+  adoptionReason?: string;
+  notAdoptedReason?: string;
+  priority: DecisionLogPriority;
+  publishedToSales: boolean;
+  publishedMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+  history: DecisionLogHistoryEntry[];
+};
+
+export type DecisionLogInput = {
+  locationId: string;
+  userId: string;
+  undecidedReason: string;
+  riskLevel: DecisionLogRiskLevel;
+  countermeasure: string;
+  priority: DecisionLogPriority;
+};
+
 export type HandwrittenNote = {
   noteId: string;
   locationId: string;

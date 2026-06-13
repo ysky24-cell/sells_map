@@ -1,0 +1,85 @@
+[
+  {
+    "decisionLogId": "decision-001",
+    "locationId": "loc-004",
+    "userId": "sales-001",
+    "undecidedReason": "午前訪問では不在が続き、意思決定者と接触できていない。",
+    "riskLevel": "high",
+    "countermeasure": "夕方以降の再訪問候補へ回し、前日または当日午前に電話確認する。",
+    "adoptionStatus": "adopted",
+    "adoptionReason": "同じ調布方面の不在案件で夕方再訪の接触率が高いため。",
+    "priority": "high",
+    "publishedToSales": true,
+    "publishedMessage": "調布方面で午前不在が続く地点は、夕方再訪と事前電話確認を優先してください。",
+    "createdAt": "2026-06-12T02:50:00.000Z",
+    "updatedAt": "2026-06-12T08:00:00.000Z",
+    "history": [
+      {
+        "historyId": "history-001",
+        "actorUserId": "sales-001",
+        "action": "created",
+        "message": "営業担当者が未決定理由と対策案を登録",
+        "createdAt": "2026-06-12T02:50:00.000Z"
+      },
+      {
+        "historyId": "history-002",
+        "actorUserId": "admin-001",
+        "action": "admin_update",
+        "message": "管理者が採用し営業向けに周知",
+        "createdAt": "2026-06-12T08:00:00.000Z"
+      }
+    ]
+  },
+  {
+    "decisionLogId": "decision-002",
+    "locationId": "loc-003",
+    "userId": "sales-003",
+    "undecidedReason": "法人管理物件の一括点検は関係者が多く、見積承認者が未確定。",
+    "riskLevel": "medium",
+    "countermeasure": "見積提出前に管理会社の承認フローと決裁者を確認する。",
+    "adoptionStatus": "proposed",
+    "priority": "medium",
+    "publishedToSales": false,
+    "createdAt": "2026-06-10T06:30:00.000Z",
+    "updatedAt": "2026-06-10T06:30:00.000Z",
+    "history": [
+      {
+        "historyId": "history-003",
+        "actorUserId": "sales-003",
+        "action": "created",
+        "message": "営業担当者が未決定理由と対策案を登録",
+        "createdAt": "2026-06-10T06:30:00.000Z"
+      }
+    ]
+  },
+  {
+    "decisionLogId": "decision-003",
+    "locationId": "loc-018",
+    "userId": "sales-002",
+    "undecidedReason": "点検案内は必要だが、土日対応の希望が強く通常訪問枠に入れにくい。",
+    "riskLevel": "medium",
+    "countermeasure": "通常訪問枠の後に休日候補枠を作る。",
+    "adoptionStatus": "not_adopted",
+    "notAdoptedReason": "休日対応は現時点の人員体制では継続運用できないため、平日夕方枠の案内を優先する。",
+    "priority": "medium",
+    "publishedToSales": false,
+    "createdAt": "2026-06-12T03:20:00.000Z",
+    "updatedAt": "2026-06-12T09:10:00.000Z",
+    "history": [
+      {
+        "historyId": "history-004",
+        "actorUserId": "sales-002",
+        "action": "created",
+        "message": "営業担当者が未決定理由と対策案を登録",
+        "createdAt": "2026-06-12T03:20:00.000Z"
+      },
+      {
+        "historyId": "history-005",
+        "actorUserId": "admin-001",
+        "action": "admin_update",
+        "message": "管理者が未採用理由を記録",
+        "createdAt": "2026-06-12T09:10:00.000Z"
+      }
+    ]
+  }
+]

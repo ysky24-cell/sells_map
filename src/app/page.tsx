@@ -13,9 +13,11 @@ import {
   Eraser,
   Filter,
   History,
+  Lightbulb,
   LogOut,
   MapPin,
   Maximize2,
+  Megaphone,
   Minimize2,
   Pencil,
   Plus,
@@ -68,6 +70,7 @@ import {
 } from "@/lib/visits";
 import seedLocations from "../../data/locations.json";
 import seedJaAreas from "../../data/ja-areas.json";
+import seedDecisionLogs from "../../data/decision-logs.json";
 import seedMunicipalities from "../../data/municipalities.json";
 import seedNotes from "../../data/notes.json";
 import seedVisitPlanItems from "../../data/visit-plan-items.json";
@@ -75,6 +78,11 @@ import seedVisitPlans from "../../data/visit-plans.json";
 import seedVisitRecords from "../../data/visit-records.json";
 import type {
   AreaTracePoint,
+  DecisionLog,
+  DecisionLogAdoptionStatus,
+  DecisionLogInput,
+  DecisionLogPriority,
+  DecisionLogRiskLevel,
   DuplicateCandidate,
   HandwrittenNote,
   JaArea,
@@ -110,6 +118,15 @@ type LocationFormState = {
 
 type SalesKpiPeriod = "today" | "last7" | "last30" | "all";
 type VisitTimeBand = "all" | "morning" | "afternoon" | "evening" | "unknown";
+type DecisionLogAdminUpdate = {
+  priority: DecisionLogPriority;
+  riskLevel: DecisionLogRiskLevel;
+  adoptionStatus: DecisionLogAdoptionStatus;
+  adoptionReason?: string;
+  notAdoptedReason?: string;
+  publishedToSales: boolean;
+  publishedMessage?: string;
+};
 
 const emptyForm: LocationFormState = {
   customerName: "",
@@ -135,6 +152,7 @@ const storageKeys = {
   visitRecords: "sales-map.visitRecords",
   jaAreas: "sales-map.jaAreas",
   municipalities: "sales-map.municipalities",
+  decisionLogs: "sales-map.decisionLogs",
 };
 
 function readLocalRecords<T>(key: string, seed: T[]): T[] {
@@ -279,6 +297,14 @@ function listStoredAllVisitRecords() {
   ).sort((a, b) => b.visitedAt.localeCompare(a.visitedAt));
 }
 
+function listStoredDecisionLogs() {
+  return readSeededRecords<DecisionLog>(
+    storageKeys.decisionLogs,
+    seedDecisionLogs as DecisionLog[],
+    (log) => log.decisionLogId,
+  ).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
 function listStoredAllVisitPlans() {
   return readSeededRecords<VisitPlan>(
     storageKeys.visitPlans,
@@ -391,6 +417,7 @@ export default function Home() {
   const [notes, setNotes] = useState<HandwrittenNote[]>([]);
   const [visitRecords, setVisitRecords] = useState<VisitRecord[]>([]);
   const [allVisitRecords, setAllVisitRecords] = useState<VisitRecord[]>([]);
+  const [decisionLogs, setDecisionLogs] = useState<DecisionLog[]>([]);
   const [visitPlan, setVisitPlan] = useState<VisitPlanWithItems | null>(null);
   const [allVisitPlans, setAllVisitPlans] = useState<VisitPlanWithItems[]>([]);
   const [visitPlanDate, setVisitPlanDate] = useState(toDateString());
@@ -430,6 +457,7 @@ export default function Home() {
       if (!cancelled) {
           setLocations(storedLocations);
           setAllVisitRecords(listStoredAllVisitRecords());
+          setDecisionLogs(listStoredDecisionLogs());
           setAllVisitPlans(listStoredVisitPlans({}));
           setJaAreas(listStoredJaAreas());
           setMunicipalities(listStoredMunicipalities());
@@ -454,6 +482,116 @@ export default function Home() {
 
   function refreshAllVisitPlans() {
     setAllVisitPlans(listStoredVisitPlans({}));
+  }
+
+  function refreshDecisionLogs() {
+    setDecisionLogs(listStoredDecisionLogs());
+  }
+
+  function createDecisionLog(input: DecisionLogInput) {
+    if (!currentUser) return;
+    const undecidedReason = input.undecidedReason.trim();
+    const countermeasure = input.countermeasure.trim();
+    if (!undecidedReason || !countermeasure) {
+      setMessage("未決定理由と対策案を入力してください。");
+      return;
+    }
+
+    const storedLogs = readSeededRecords<DecisionLog>(
+      storageKeys.decisionLogs,
+      seedDecisionLogs as DecisionLog[],
+      (log) => log.decisionLogId,
+    );
+    const now = nowIso();
+    const log: DecisionLog = {
+      decisionLogId: `decision-${crypto.randomUUID()}`,
+      locationId: input.locationId,
+      userId: input.userId,
+      undecidedReason,
+      riskLevel: input.riskLevel,
+      countermeasure,
+      adoptionStatus: "proposed",
+      priority: input.priority,
+      publishedToSales: false,
+      createdAt: now,
+      updatedAt: now,
+      history: [
+        {
+          historyId: `history-${crypto.randomUUID()}`,
+          actorUserId: currentUser.userId,
+          action: "created",
+          message: "営業担当者が未決定理由と対策案を登録",
+          createdAt: now,
+        },
+      ],
+    };
+
+    writeLocalRecords(storageKeys.decisionLogs, [log, ...storedLogs]);
+    refreshDecisionLogs();
+    setMessage("未決定理由をログとして登録しました。");
+  }
+
+  function updateDecisionLog(
+    decisionLogId: string,
+    updates: DecisionLogAdminUpdate,
+  ) {
+    if (!currentUser) return;
+    if (updates.adoptionStatus === "not_adopted" && !updates.notAdoptedReason?.trim()) {
+      setAdminMessage("未採用にする場合は、未採用理由を入力してください。");
+      return;
+    }
+    if (updates.publishedToSales && updates.adoptionStatus !== "adopted") {
+      setAdminMessage("営業担当者へ周知する決定事項は、採用済みにしてください。");
+      return;
+    }
+
+    const storedLogs = readSeededRecords<DecisionLog>(
+      storageKeys.decisionLogs,
+      seedDecisionLogs as DecisionLog[],
+      (log) => log.decisionLogId,
+    );
+    const now = nowIso();
+    let didUpdate = false;
+    const historyMessage =
+      updates.adoptionStatus === "adopted"
+        ? "管理者が対策案を採用し周知設定を更新"
+        : updates.adoptionStatus === "not_adopted"
+          ? "管理者が未採用理由を記録"
+          : "管理者が優先度と対策検討状況を更新";
+    const nextLogs = storedLogs.map((log) => {
+      if (log.decisionLogId !== decisionLogId) return log;
+      didUpdate = true;
+      return {
+        ...log,
+        priority: updates.priority,
+        riskLevel: updates.riskLevel,
+        adoptionStatus: updates.adoptionStatus,
+        adoptionReason: updates.adoptionReason?.trim() || undefined,
+        notAdoptedReason: updates.notAdoptedReason?.trim() || undefined,
+        publishedToSales: updates.publishedToSales,
+        publishedMessage: updates.publishedMessage?.trim() || undefined,
+        updatedAt: now,
+        history: [
+          ...log.history,
+          {
+            historyId: `history-${crypto.randomUUID()}`,
+            actorUserId: currentUser.userId,
+            action: "admin_update" as const,
+            message: historyMessage,
+            createdAt: now,
+          },
+        ],
+      };
+    });
+
+    if (!didUpdate) {
+      setAdminMessage("更新対象の未決定理由ログが見つかりませんでした。");
+      return;
+    }
+
+    writeLocalRecords(storageKeys.decisionLogs, nextLogs);
+    refreshDecisionLogs();
+    setAdminMessage("未決定理由ログを更新しました。");
   }
 
   const effectiveVisitPlanUserId =
@@ -1491,6 +1629,7 @@ export default function Home() {
             locations={visibleByRole}
             jaAreas={visibleJaAreas}
             municipalities={visibleMunicipalities}
+            decisionLogs={decisionLogs}
           />
           <LocationForm
             currentUser={currentUser}
@@ -1563,6 +1702,7 @@ export default function Home() {
               locations={locations}
               visitRecords={allVisitRecords}
               visitPlans={allVisitPlans}
+              decisionLogs={decisionLogs}
               jaAreas={jaAreas}
               municipalities={municipalities}
               duplicateCandidates={locations
@@ -1592,6 +1732,7 @@ export default function Home() {
               onCancelAreaTrace={cancelAreaTrace}
               onSaveAreaTrace={saveAreaTrace}
               onClearAreaTrace={clearAreaTrace}
+              onUpdateDecisionLog={updateDecisionLog}
             />
           ) : null}
 
@@ -1623,6 +1764,7 @@ export default function Home() {
               municipalities={municipalities}
               notes={notes}
               visitRecords={visitRecords}
+              decisionLogs={decisionLogs}
               notesLoading={notesLoading}
               onEdit={startEdit}
               onDelete={deleteLocation}
@@ -1630,6 +1772,7 @@ export default function Home() {
               onSaveNote={saveHandwrittenNote}
               onDeleteNote={deleteHandwrittenNote}
               onSaveVisitRecord={saveVisitRecord}
+              onCreateDecisionLog={createDecisionLog}
             />
           </div>
 
@@ -1775,6 +1918,7 @@ function DashboardPanel({
   locations,
   jaAreas,
   municipalities,
+  decisionLogs,
 }: {
   currentUser: User;
   dashboard: {
@@ -1788,6 +1932,7 @@ function DashboardPanel({
   locations: Location[];
   jaAreas: JaArea[];
   municipalities: Municipality[];
+  decisionLogs: DecisionLog[];
 }) {
   const stats =
     currentUser.role === "admin"
@@ -1802,7 +1947,23 @@ function DashboardPanel({
           { label: "未訪問", value: dashboard.unvisited, icon: MapPin },
           { label: "再訪問", value: dashboard.revisit, icon: Route },
           { label: "点検予定", value: dashboard.inspections, icon: ClipboardList },
-        ];
+      ];
+  const locationById = useMemo(
+    () => new Map(locations.map((location) => [location.locationId, location])),
+    [locations],
+  );
+  const publishedDecisionLogs = useMemo(
+    () =>
+      decisionLogs
+        .filter(
+          (log) =>
+            log.publishedToSales &&
+            log.adoptionStatus === "adopted" &&
+            locationById.has(log.locationId),
+        )
+        .slice(0, 3),
+    [decisionLogs, locationById],
+  );
 
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
@@ -1827,6 +1988,7 @@ function DashboardPanel({
         })}
       </div>
       {currentUser.role === "sales" ? (
+        <>
         <div className="mt-4 rounded-md border border-emerald-100 bg-emerald-50 p-3">
           <p className="text-sm font-semibold text-emerald-950">担当JAエリア</p>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -1854,6 +2016,44 @@ function DashboardPanel({
             ))}
           </div>
         </div>
+        <div className="mt-3 rounded-md border border-sky-100 bg-sky-50 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="inline-flex items-center gap-2 text-sm font-semibold text-sky-950">
+              <Megaphone size={15} />
+              決定事項の周知
+            </p>
+            <span className="rounded bg-white px-2 py-1 text-xs font-semibold text-sky-900">
+              {publishedDecisionLogs.length}件
+            </span>
+          </div>
+          {publishedDecisionLogs.length === 0 ? (
+            <p className="mt-2 text-xs leading-5 text-sky-900">
+              現在、この担当エリア向けの新しい周知はありません。
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {publishedDecisionLogs.map((log) => {
+                const decisionLocation = locationById.get(log.locationId);
+                return (
+                  <li
+                    key={log.decisionLogId}
+                    className="rounded bg-white px-2 py-2 text-xs leading-5 text-sky-950"
+                  >
+                    <p className="font-semibold">
+                      {decisionLocation?.customerName ??
+                        decisionLocation?.address ??
+                        "地点未設定"}
+                    </p>
+                    <p className="mt-1">
+                      {log.publishedMessage ?? log.countermeasure}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+        </>
       ) : null}
     </section>
   );
@@ -1863,6 +2063,7 @@ function AdminPanel({
   locations,
   visitRecords,
   visitPlans,
+  decisionLogs,
   jaAreas,
   municipalities,
   duplicateCandidates,
@@ -1879,10 +2080,12 @@ function AdminPanel({
   onCancelAreaTrace,
   onSaveAreaTrace,
   onClearAreaTrace,
+  onUpdateDecisionLog,
 }: {
   locations: Location[];
   visitRecords: VisitRecord[];
   visitPlans: VisitPlanWithItems[];
+  decisionLogs: DecisionLog[];
   jaAreas: JaArea[];
   municipalities: Municipality[];
   duplicateCandidates: DuplicateCandidate[];
@@ -1903,6 +2106,10 @@ function AdminPanel({
   onCancelAreaTrace: () => void;
   onSaveAreaTrace: (areaId: string) => void;
   onClearAreaTrace: (areaId: string) => void;
+  onUpdateDecisionLog: (
+    decisionLogId: string,
+    updates: DecisionLogAdminUpdate,
+  ) => void;
 }) {
   const [areaForm, setAreaForm] = useState({ name: "", code: "", memo: "" });
   const [municipalityForm, setMunicipalityForm] = useState({
@@ -1946,6 +2153,22 @@ function AdminPanel({
 
   return (
     <>
+      <SalesKpiDashboard
+        locations={locations}
+        visitRecords={visitRecords}
+        visitPlans={visitPlans}
+        jaAreas={jaAreas}
+        municipalities={municipalities}
+      />
+
+      <DecisionKnowledgeDashboard
+        decisionLogs={decisionLogs}
+        locations={locations}
+        jaAreas={jaAreas}
+        municipalities={municipalities}
+        onUpdateDecisionLog={onUpdateDecisionLog}
+      />
+
       <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
@@ -2315,13 +2538,6 @@ function AdminPanel({
       </div>
       </section>
 
-      <SalesKpiDashboard
-        locations={locations}
-        visitRecords={visitRecords}
-        visitPlans={visitPlans}
-        jaAreas={jaAreas}
-        municipalities={municipalities}
-      />
     </>
   );
 }
@@ -2340,6 +2556,24 @@ const visitTimeBandOptions = [
   { value: "evening", label: "夕方以降" },
   { value: "unknown", label: "未設定" },
 ] satisfies { value: VisitTimeBand; label: string }[];
+
+const decisionPriorityOptions = [
+  { value: "high", label: "高" },
+  { value: "medium", label: "中" },
+  { value: "low", label: "低" },
+] satisfies { value: DecisionLogPriority; label: string }[];
+
+const decisionRiskOptions = [
+  { value: "high", label: "高リスク" },
+  { value: "medium", label: "中リスク" },
+  { value: "low", label: "低リスク" },
+] satisfies { value: DecisionLogRiskLevel; label: string }[];
+
+const decisionStatusOptions = [
+  { value: "proposed", label: "検討中" },
+  { value: "adopted", label: "採用" },
+  { value: "not_adopted", label: "未採用" },
+] satisfies { value: DecisionLogAdoptionStatus; label: string }[];
 
 type SalesKpiVisitContext = {
   record: VisitRecord;
@@ -2366,6 +2600,617 @@ type SalesKpiBreakdownRow = {
   contracts: number;
   nextActionRate: number;
 };
+
+type DecisionLogContext = {
+  log: DecisionLog;
+  location?: Location;
+  area?: JaArea;
+  municipality?: Municipality;
+  user?: User;
+};
+
+type DecisionBreakdownRow = {
+  label: string;
+  total: number;
+  high: number;
+  proposed: number;
+  adopted: number;
+  notAdopted: number;
+  published: number;
+};
+
+function DecisionKnowledgeDashboard({
+  decisionLogs,
+  locations,
+  jaAreas,
+  municipalities,
+  onUpdateDecisionLog,
+}: {
+  decisionLogs: DecisionLog[];
+  locations: Location[];
+  jaAreas: JaArea[];
+  municipalities: Municipality[];
+  onUpdateDecisionLog: (
+    decisionLogId: string,
+    updates: DecisionLogAdminUpdate,
+  ) => void;
+}) {
+  const [areaFilter, setAreaFilter] = useState("all");
+  const [municipalityFilter, setMunicipalityFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | DecisionLogPriority>(
+    "all",
+  );
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | DecisionLogAdoptionStatus
+  >("all");
+
+  const locationMap = useMemo(
+    () => new Map(locations.map((location) => [location.locationId, location])),
+    [locations],
+  );
+  const contexts = useMemo(
+    () =>
+      decisionLogs.map((log): DecisionLogContext => {
+        const location = locationMap.get(log.locationId);
+        return {
+          log,
+          location,
+          area: location ? areaForLocation(location, jaAreas, municipalities) : undefined,
+          municipality: location
+            ? municipalityForLocation(location, municipalities)
+            : undefined,
+          user: findUser(log.userId),
+        };
+      }),
+    [decisionLogs, jaAreas, locationMap, municipalities],
+  );
+  const availableMunicipalities =
+    areaFilter === "all"
+      ? municipalities
+      : municipalities.filter((municipality) => municipality.areaId === areaFilter);
+  const filteredContexts = contexts.filter((context) => {
+    const matchesArea = areaFilter === "all" || context.area?.areaId === areaFilter;
+    const matchesMunicipality =
+      municipalityFilter === "all" ||
+      context.municipality?.municipalityId === municipalityFilter;
+    const matchesPriority =
+      priorityFilter === "all" || context.log.priority === priorityFilter;
+    const matchesStatus =
+      statusFilter === "all" || context.log.adoptionStatus === statusFilter;
+
+    return matchesArea && matchesMunicipality && matchesPriority && matchesStatus;
+  });
+  const highPriorityCount = filteredContexts.filter(
+    (context) =>
+      context.log.priority === "high" || context.log.riskLevel === "high",
+  ).length;
+  const proposedCount = filteredContexts.filter(
+    (context) => context.log.adoptionStatus === "proposed",
+  ).length;
+  const adoptedCount = filteredContexts.filter(
+    (context) => context.log.adoptionStatus === "adopted",
+  ).length;
+  const publishedCount = filteredContexts.filter(
+    (context) => context.log.publishedToSales,
+  ).length;
+  const areaBreakdownRows = buildDecisionBreakdownRows(
+    filteredContexts,
+    (context) => context.area?.name ?? "JAエリア未設定",
+  );
+  const municipalityBreakdownRows = buildDecisionBreakdownRows(
+    filteredContexts,
+    (context) =>
+      context.municipality
+        ? `${context.municipality.prefecture}${context.municipality.name}`
+        : "市町村未設定",
+  );
+
+  return (
+    <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Lightbulb size={18} />
+            <h2 className="font-semibold">未決定理由ナレッジ管理</h2>
+          </div>
+          <p className="mt-1 text-sm leading-6 text-zinc-600">
+            現場の迷いをリスクとして集め、対策案・採用判断・未採用理由までログに残します。
+          </p>
+        </div>
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm leading-6 text-sky-950">
+          採用した対策は営業画面へ周知できます。判断履歴は消さずに残します。
+        </div>
+      </div>
+
+      <HypothesisValidationNote className="mt-4" />
+
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">JAエリア</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={areaFilter}
+            onChange={(event) => {
+              setAreaFilter(event.target.value);
+              setMunicipalityFilter("all");
+            }}
+          >
+            <option value="all">すべてのJAエリア</option>
+            {jaAreas.map((area) => (
+              <option key={area.areaId} value={area.areaId}>
+                {area.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">市町村</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={municipalityFilter}
+            onChange={(event) => setMunicipalityFilter(event.target.value)}
+          >
+            <option value="all">すべての市町村</option>
+            {availableMunicipalities.map((municipality) => (
+              <option
+                key={municipality.municipalityId}
+                value={municipality.municipalityId}
+              >
+                {municipality.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">優先度</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={priorityFilter}
+            onChange={(event) =>
+              setPriorityFilter(event.target.value as "all" | DecisionLogPriority)
+            }
+          >
+            <option value="all">すべての優先度</option>
+            {decisionPriorityOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">判断状況</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(
+                event.target.value as "all" | DecisionLogAdoptionStatus,
+              )
+            }
+          >
+            <option value="all">すべての状況</option>
+            {decisionStatusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <MiniStat
+          icon={<ClipboardList size={18} />}
+          label="ログ件数"
+          value={`${filteredContexts.length}`}
+        />
+        <MiniStat
+          icon={<AlertTriangle size={18} />}
+          label="高優先・高リスク"
+          value={`${highPriorityCount}`}
+        />
+        <MiniStat
+          icon={<Lightbulb size={18} />}
+          label="検討中"
+          value={`${proposedCount}`}
+        />
+        <MiniStat
+          icon={<Megaphone size={18} />}
+          label="営業周知"
+          value={`${publishedCount}`}
+        />
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        <DecisionBreakdownTable title="JAエリア別" rows={areaBreakdownRows} />
+        <DecisionBreakdownTable title="市町村別" rows={municipalityBreakdownRows} />
+      </div>
+
+      <div className="mt-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">未決定理由一覧</h3>
+          <span className="rounded bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-700">
+            採用 {adoptedCount}件 / 検討中 {proposedCount}件
+          </span>
+        </div>
+        {filteredContexts.length === 0 ? (
+          <p className="rounded-md bg-zinc-50 px-3 py-3 text-sm text-zinc-600">
+            条件に合う未決定理由ログはありません。
+          </p>
+        ) : (
+          <div className="grid gap-3">
+            {filteredContexts.slice(0, 10).map((context) => (
+              <DecisionLogAdminItem
+                key={context.log.decisionLogId}
+                context={context}
+                onUpdateDecisionLog={onUpdateDecisionLog}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DecisionLogAdminItem({
+  context,
+  onUpdateDecisionLog,
+}: {
+  context: DecisionLogContext;
+  onUpdateDecisionLog: (
+    decisionLogId: string,
+    updates: DecisionLogAdminUpdate,
+  ) => void;
+}) {
+  const { log, location, area, municipality, user } = context;
+  const [priority, setPriority] = useState(log.priority);
+  const [riskLevel, setRiskLevel] = useState(log.riskLevel);
+  const [adoptionStatus, setAdoptionStatus] = useState(log.adoptionStatus);
+  const [adoptionReason, setAdoptionReason] = useState(log.adoptionReason ?? "");
+  const [notAdoptedReason, setNotAdoptedReason] = useState(
+    log.notAdoptedReason ?? "",
+  );
+  const [publishedToSales, setPublishedToSales] = useState(log.publishedToSales);
+  const [publishedMessage, setPublishedMessage] = useState(
+    log.publishedMessage ?? "",
+  );
+  const latestHistory = log.history.at(-1);
+
+  function submitUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onUpdateDecisionLog(log.decisionLogId, {
+      priority,
+      riskLevel,
+      adoptionStatus,
+      adoptionReason,
+      notAdoptedReason,
+      publishedToSales,
+      publishedMessage,
+    });
+  }
+
+  return (
+    <form
+      className="rounded-md border border-zinc-200 bg-zinc-50 p-3"
+      onSubmit={submitUpdate}
+    >
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`rounded px-2 py-1 text-xs font-semibold ${decisionPriorityTone(
+                priority,
+              )}`}
+            >
+              優先度 {decisionPriorityLabel(priority)}
+            </span>
+            <span
+              className={`rounded px-2 py-1 text-xs font-semibold ${decisionRiskTone(
+                riskLevel,
+              )}`}
+            >
+              {decisionRiskLabel(riskLevel)}
+            </span>
+            <span
+              className={`rounded px-2 py-1 text-xs font-semibold ${decisionStatusTone(
+                adoptionStatus,
+              )}`}
+            >
+              {decisionStatusLabel(adoptionStatus)}
+            </span>
+          </div>
+          <p className="mt-2 font-semibold text-zinc-950">
+            {location?.customerName ?? location?.address ?? "地点未設定"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-zinc-600">
+            {area?.name ?? "JAエリア未設定"} /{" "}
+            {municipality
+              ? `${municipality.prefecture}${municipality.name}`
+              : "市町村未設定"}{" "}
+            / 登録者 {user?.name ?? "未設定"}
+          </p>
+        </div>
+        <span className="text-xs text-zinc-500">
+          更新 {toLocalDateString(log.updatedAt)}
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-md bg-white p-3">
+          <p className="text-xs font-semibold text-zinc-500">未決定理由</p>
+          <p className="mt-2 text-sm leading-6 text-zinc-800">
+            {log.undecidedReason}
+          </p>
+        </div>
+        <div className="rounded-md bg-white p-3">
+          <p className="text-xs font-semibold text-zinc-500">対策案</p>
+          <p className="mt-2 text-sm leading-6 text-zinc-800">
+            {log.countermeasure}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">優先度</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={priority}
+            onChange={(event) =>
+              setPriority(event.target.value as DecisionLogPriority)
+            }
+          >
+            {decisionPriorityOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">リスク</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={riskLevel}
+            onChange={(event) =>
+              setRiskLevel(event.target.value as DecisionLogRiskLevel)
+            }
+          >
+            {decisionRiskOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">判断状況</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={adoptionStatus}
+            onChange={(event) => {
+              const nextStatus = event.target.value as DecisionLogAdoptionStatus;
+              setAdoptionStatus(nextStatus);
+              if (nextStatus !== "adopted") {
+                setPublishedToSales(false);
+              }
+            }}
+          >
+            {decisionStatusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-3 grid gap-2 lg:grid-cols-2">
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">採用理由</span>
+          <textarea
+            className="min-h-20 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 outline-none focus:border-emerald-600"
+            value={adoptionReason}
+            onChange={(event) => setAdoptionReason(event.target.value)}
+            placeholder="採用した理由、横展開できる条件など"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">未採用理由</span>
+          <textarea
+            className="min-h-20 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 outline-none focus:border-emerald-600"
+            value={notAdoptedReason}
+            onChange={(event) => setNotAdoptedReason(event.target.value)}
+            placeholder="採用しない理由、代替方針、制約など"
+            required={adoptionStatus === "not_adopted"}
+          />
+        </label>
+      </div>
+
+      <div className="mt-3 rounded-md border border-sky-100 bg-white p-3">
+        <label className="inline-flex items-center gap-2 text-sm font-medium text-zinc-800">
+          <input
+            type="checkbox"
+            className="size-4 rounded border-zinc-300"
+            checked={publishedToSales}
+            disabled={adoptionStatus !== "adopted"}
+            onChange={(event) => setPublishedToSales(event.target.checked)}
+          />
+          採用した決定事項として営業画面へ周知する
+        </label>
+        <textarea
+          className="mt-2 min-h-16 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600 disabled:bg-zinc-100"
+          value={publishedMessage}
+          onChange={(event) => setPublishedMessage(event.target.value)}
+          disabled={!publishedToSales}
+          placeholder="営業担当者に見せる短い周知文"
+        />
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs leading-5 text-zinc-500">
+          最終ログ: {latestHistory?.message ?? "履歴なし"}
+        </p>
+        <button
+          type="submit"
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+        >
+          <Save size={16} />
+          判断を保存
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function DecisionBreakdownTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: DecisionBreakdownRow[];
+}) {
+  return (
+    <div className="rounded-md border border-zinc-200 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <span className="rounded bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-700">
+          {rows.length}件
+        </span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="mt-3 text-sm text-zinc-600">
+          条件に合う未決定理由ログはありません。
+        </p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="min-w-full text-left text-xs">
+            <thead className="border-b border-zinc-200 text-zinc-500">
+              <tr>
+                <th className="pb-2 pr-3 font-medium">区分</th>
+                <th className="pb-2 pr-3 font-medium">総数</th>
+                <th className="pb-2 pr-3 font-medium">高</th>
+                <th className="pb-2 pr-3 font-medium">検討中</th>
+                <th className="pb-2 pr-3 font-medium">採用</th>
+                <th className="pb-2 font-medium">周知</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 8).map((row) => (
+                <tr key={row.label} className="border-b border-zinc-100 last:border-0">
+                  <td className="max-w-44 truncate py-2 pr-3 font-medium text-zinc-900">
+                    {row.label}
+                  </td>
+                  <td className="py-2 pr-3 text-zinc-700">{row.total}</td>
+                  <td className="py-2 pr-3 text-zinc-700">{row.high}</td>
+                  <td className="py-2 pr-3 text-zinc-700">{row.proposed}</td>
+                  <td className="py-2 pr-3 text-zinc-700">{row.adopted}</td>
+                  <td className="py-2 text-zinc-700">{row.published}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function buildDecisionBreakdownRows(
+  contexts: DecisionLogContext[],
+  labelForContext: (context: DecisionLogContext) => string,
+): DecisionBreakdownRow[] {
+  const rows = new Map<string, DecisionBreakdownRow>();
+  contexts.forEach((context) => {
+    const label = labelForContext(context);
+    const current =
+      rows.get(label) ??
+      {
+        label,
+        total: 0,
+        high: 0,
+        proposed: 0,
+        adopted: 0,
+        notAdopted: 0,
+        published: 0,
+      };
+
+    current.total += 1;
+    if (context.log.priority === "high" || context.log.riskLevel === "high") {
+      current.high += 1;
+    }
+    if (context.log.adoptionStatus === "proposed") current.proposed += 1;
+    if (context.log.adoptionStatus === "adopted") current.adopted += 1;
+    if (context.log.adoptionStatus === "not_adopted") current.notAdopted += 1;
+    if (context.log.publishedToSales) current.published += 1;
+    rows.set(label, current);
+  });
+
+  return [...rows.values()].sort(
+    (a, b) =>
+      b.high - a.high ||
+      b.proposed - a.proposed ||
+      b.total - a.total ||
+      a.label.localeCompare(b.label, "ja"),
+  );
+}
+
+function decisionPriorityLabel(priority: DecisionLogPriority) {
+  return (
+    decisionPriorityOptions.find((option) => option.value === priority)?.label ??
+    "中"
+  );
+}
+
+function decisionRiskLabel(riskLevel: DecisionLogRiskLevel) {
+  return (
+    decisionRiskOptions.find((option) => option.value === riskLevel)?.label ??
+    "中リスク"
+  );
+}
+
+function decisionStatusLabel(status: DecisionLogAdoptionStatus) {
+  return (
+    decisionStatusOptions.find((option) => option.value === status)?.label ??
+    "検討中"
+  );
+}
+
+function decisionPriorityTone(priority: DecisionLogPriority) {
+  if (priority === "high") return "bg-rose-100 text-rose-800";
+  if (priority === "medium") return "bg-amber-100 text-amber-800";
+  return "bg-zinc-100 text-zinc-700";
+}
+
+function decisionRiskTone(riskLevel: DecisionLogRiskLevel) {
+  if (riskLevel === "high") return "bg-rose-100 text-rose-800";
+  if (riskLevel === "medium") return "bg-amber-100 text-amber-800";
+  return "bg-sky-100 text-sky-800";
+}
+
+function decisionStatusTone(status: DecisionLogAdoptionStatus) {
+  if (status === "adopted") return "bg-emerald-100 text-emerald-800";
+  if (status === "not_adopted") return "bg-zinc-200 text-zinc-800";
+  return "bg-sky-100 text-sky-800";
+}
+
+function HypothesisValidationNote({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-6 text-amber-950 ${className}`}
+    >
+      <p className="font-semibold">仮説検証の考え方</p>
+      <p className="mt-1">
+        仮説は効果がまだ確定していない前提なので、最初は複数出しておくことが大切です。
+        対策案はいくつ出しても構いませんが、現場の運用負荷が増えすぎないように優先度を決め、
+        重要なものから順に実行します。実行した対策は結果を記録し、
+        定期的に見直して次の判断につなげましょう。
+      </p>
+    </div>
+  );
+}
 
 function SalesKpiDashboard({
   locations,
@@ -3976,6 +4821,7 @@ function LocationDetail({
   municipalities,
   notes,
   visitRecords,
+  decisionLogs,
   notesLoading,
   onEdit,
   onDelete,
@@ -3983,6 +4829,7 @@ function LocationDetail({
   onSaveNote,
   onDeleteNote,
   onSaveVisitRecord,
+  onCreateDecisionLog,
 }: {
   location: Location | null;
   currentUser: User;
@@ -3990,6 +4837,7 @@ function LocationDetail({
   municipalities: Municipality[];
   notes: HandwrittenNote[];
   visitRecords: VisitRecord[];
+  decisionLogs: DecisionLog[];
   notesLoading: boolean;
   onEdit: (location: Location) => void;
   onDelete: (location: Location) => void;
@@ -4002,6 +4850,7 @@ function LocationDetail({
   }) => Promise<void>;
   onDeleteNote: (note: HandwrittenNote, actorUserId: string) => Promise<void>;
   onSaveVisitRecord: (input: VisitRecordInput) => Promise<void>;
+  onCreateDecisionLog: (input: DecisionLogInput) => void;
 }) {
   if (!location) {
     return (
@@ -4091,6 +4940,14 @@ function LocationDetail({
         onSaveVisitRecord={onSaveVisitRecord}
       />
 
+      <DecisionLogSection
+        key={`decision-${location.locationId}`}
+        currentUser={currentUser}
+        location={location}
+        logs={decisionLogs.filter((log) => log.locationId === location.locationId)}
+        onCreateDecisionLog={onCreateDecisionLog}
+      />
+
       <HandwrittenNotesSection
         currentUser={currentUser}
         location={location}
@@ -4101,6 +4958,198 @@ function LocationDetail({
         onDeleteNote={onDeleteNote}
       />
     </section>
+  );
+}
+
+function DecisionLogSection({
+  currentUser,
+  location,
+  logs,
+  onCreateDecisionLog,
+}: {
+  currentUser: User;
+  location: Location;
+  logs: DecisionLog[];
+  onCreateDecisionLog: (input: DecisionLogInput) => void;
+}) {
+  const [undecidedReason, setUndecidedReason] = useState("");
+  const [countermeasure, setCountermeasure] = useState("");
+  const [riskLevel, setRiskLevel] = useState<DecisionLogRiskLevel>("medium");
+  const [priority, setPriority] = useState<DecisionLogPriority>("medium");
+  const [decisionMessage, setDecisionMessage] = useState("");
+
+  function submitDecisionLog(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const reason = undecidedReason.trim();
+    const measure = countermeasure.trim();
+    if (!reason || !measure) {
+      setDecisionMessage("未決定理由と対策案を入力してください。");
+      return;
+    }
+
+    onCreateDecisionLog({
+      locationId: location.locationId,
+      userId: currentUser.userId,
+      undecidedReason: reason,
+      riskLevel,
+      countermeasure: measure,
+      priority,
+    });
+    setUndecidedReason("");
+    setCountermeasure("");
+    setRiskLevel("medium");
+    setPriority("medium");
+    setDecisionMessage("未決定理由を管理者向けログに登録しました。");
+  }
+
+  return (
+    <div className="mt-5 border-t border-zinc-100 pt-5">
+      <div className="mb-3">
+        <div className="flex items-center gap-2">
+          <Lightbulb size={17} />
+          <h3 className="font-semibold">未決定理由・対策案</h3>
+        </div>
+        <p className="mt-1 text-sm leading-6 text-zinc-600">
+          決まらない理由を残すと、管理者側でリスク・優先度を見て対策ノウハウにできます。
+        </p>
+      </div>
+
+      <HypothesisValidationNote className="mb-3" />
+
+      {decisionMessage ? (
+        <p className="mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">
+          {decisionMessage}
+        </p>
+      ) : null}
+
+      <form
+        className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-3"
+        onSubmit={submitDecisionLog}
+      >
+        <label className="grid gap-1 text-sm font-medium">
+          未決定理由
+          <textarea
+            className="min-h-20 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600"
+            value={undecidedReason}
+            onChange={(event) => setUndecidedReason(event.target.value)}
+            placeholder="例: 決裁者に会えていない、費用の不安が残っている、家族確認待ちなど"
+            required
+          />
+        </label>
+
+        <label className="grid gap-1 text-sm font-medium">
+          対策案
+          <textarea
+            className="min-h-20 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600"
+            value={countermeasure}
+            onChange={(event) => setCountermeasure(event.target.value)}
+            placeholder="例: 夕方再訪、点検写真を見せる、決裁者同席の日程を確認するなど"
+            required
+          />
+        </label>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="grid gap-1 text-sm font-medium">
+            リスク
+            <select
+              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-emerald-600"
+              value={riskLevel}
+              onChange={(event) =>
+                setRiskLevel(event.target.value as DecisionLogRiskLevel)
+              }
+            >
+              {decisionRiskOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-medium">
+            優先度
+            <select
+              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-emerald-600"
+              value={priority}
+              onChange={(event) =>
+                setPriority(event.target.value as DecisionLogPriority)
+              }
+            >
+              {decisionPriorityOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <button
+          type="submit"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+        >
+          <Save size={16} />
+          未決定理由をログ化
+        </button>
+      </form>
+
+      <div className="mt-4">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold">この地点のログ</p>
+          <span className="rounded bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-700">
+            {logs.length}件
+          </span>
+        </div>
+        {logs.length === 0 ? (
+          <p className="rounded-md bg-zinc-50 px-3 py-3 text-sm text-zinc-600">
+            まだ未決定理由ログはありません。
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {logs.slice(0, 4).map((log) => (
+              <li
+                key={log.decisionLogId}
+                className="rounded-md border border-zinc-200 p-3 text-sm"
+              >
+                <div className="flex flex-wrap gap-2">
+                  <span
+                    className={`rounded px-2 py-1 text-xs font-semibold ${decisionPriorityTone(
+                      log.priority,
+                    )}`}
+                  >
+                    優先度 {decisionPriorityLabel(log.priority)}
+                  </span>
+                  <span
+                    className={`rounded px-2 py-1 text-xs font-semibold ${decisionRiskTone(
+                      log.riskLevel,
+                    )}`}
+                  >
+                    {decisionRiskLabel(log.riskLevel)}
+                  </span>
+                  <span
+                    className={`rounded px-2 py-1 text-xs font-semibold ${decisionStatusTone(
+                      log.adoptionStatus,
+                    )}`}
+                  >
+                    {decisionStatusLabel(log.adoptionStatus)}
+                  </span>
+                </div>
+                <p className="mt-2 leading-6 text-zinc-700">
+                  {log.undecidedReason}
+                </p>
+                <p className="mt-2 rounded bg-zinc-50 px-2 py-1.5 text-xs leading-5 text-zinc-600">
+                  対策案: {log.countermeasure}
+                </p>
+                {log.notAdoptedReason ? (
+                  <p className="mt-2 rounded bg-zinc-100 px-2 py-1.5 text-xs leading-5 text-zinc-600">
+                    未採用理由: {log.notAdoptedReason}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }
 
