@@ -1,4 +1,4 @@
-import { mockGeocode } from "@/lib/geo";
+import { mockGeocode, mockReverseGeocode } from "@/lib/geo";
 import type { GeocodingService, MapTileProvider } from "@/types/domain";
 
 export class MockMapProvider implements MapTileProvider {
@@ -10,5 +10,12 @@ export class MockMapProvider implements MapTileProvider {
 export class MockGeocodingService implements GeocodingService {
   async geocode(address: string) {
     return mockGeocode(address);
+  }
+
+  async reverseGeocode(params: Parameters<GeocodingService["reverseGeocode"]>[0]) {
+    return mockReverseGeocode(
+      { lat: params.lat, lng: params.lng },
+      params.nearbyLocations ?? [],
+    );
   }
 }

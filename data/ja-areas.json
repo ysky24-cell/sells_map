@@ -1,0 +1,86 @@
+[
+  {
+    "areaId": "area-setagaya",
+    "name": "JA東京中央 世田谷エリア",
+    "code": "JA-TC-SETAGAYA",
+    "memo": "世田谷区・狛江市を中心にした営業エリア",
+    "boundaryTrace": {
+      "points": [
+        { "x": 11.5, "y": 48.5 },
+        { "x": 24.8, "y": 37.2 },
+        { "x": 43.2, "y": 45.6 },
+        { "x": 38.9, "y": 68.5 },
+        { "x": 18.4, "y": 74.1 }
+      ],
+      "source": "manual_trace",
+      "updatedAt": "2026-06-13T00:00:00.000Z",
+      "updatedBy": "admin-001"
+    },
+    "active": true,
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "areaId": "area-suginami",
+    "name": "JA東京中央 杉並エリア",
+    "code": "JA-TC-SUGINAMI",
+    "memo": "杉並区を中心にした営業エリア",
+    "boundaryTrace": {
+      "points": [
+        { "x": 41.5, "y": 24.2 },
+        { "x": 63.6, "y": 18.7 },
+        { "x": 78.5, "y": 35.4 },
+        { "x": 68.1, "y": 53.5 },
+        { "x": 48.2, "y": 48.8 }
+      ],
+      "source": "manual_trace",
+      "updatedAt": "2026-06-13T00:00:00.000Z",
+      "updatedBy": "admin-001"
+    },
+    "active": true,
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "areaId": "area-chofu",
+    "name": "JAマインズ 調布エリア",
+    "code": "JA-MINDS-CHOFU",
+    "memo": "調布市周辺の営業エリア",
+    "boundaryTrace": {
+      "points": [
+        { "x": 23.4, "y": 68.6 },
+        { "x": 38.8, "y": 59.9 },
+        { "x": 54.1, "y": 68.1 },
+        { "x": 49.6, "y": 87.2 },
+        { "x": 28.2, "y": 88.6 }
+      ],
+      "source": "manual_trace",
+      "updatedAt": "2026-06-13T00:00:00.000Z",
+      "updatedBy": "admin-001"
+    },
+    "active": true,
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "areaId": "area-mitaka",
+    "name": "JA東京むさし 三鷹エリア",
+    "code": "JA-MUSASHI-MITAKA",
+    "memo": "三鷹市周辺の営業エリア",
+    "boundaryTrace": {
+      "points": [
+        { "x": 52.4, "y": 54.5 },
+        { "x": 72.2, "y": 49.2 },
+        { "x": 86.3, "y": 62.5 },
+        { "x": 78.2, "y": 81.8 },
+        { "x": 58.1, "y": 76.4 }
+      ],
+      "source": "manual_trace",
+      "updatedAt": "2026-06-13T00:00:00.000Z",
+      "updatedBy": "admin-001"
+    },
+    "active": true,
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  }
+]

@@ -15,6 +15,8 @@ const baseLocation: Location = {
   lng: 139.6324,
   status: "constructed",
   assignedUserId: "sales-001",
+  areaId: "area-setagaya",
+  municipalityId: "muni-setagaya",
   constructionDate: "2024-05-10",
   nextInspectionDate: "2026-07-15",
   memo: "床下点検済み, 次回説明",
@@ -30,6 +32,7 @@ describe("locations CSV helpers", () => {
     const csv = locationsToCsv([baseLocation]);
 
     expect(csv).toContain('"床下点検済み, 次回説明"');
+    expect(csv).toContain("areaId,municipalityId");
     expect(parseCsv(csv)[1]).toContain("床下点検済み, 次回説明");
   });
 

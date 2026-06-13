@@ -1,0 +1,47 @@
+[
+  {
+    "municipalityId": "muni-setagaya",
+    "areaId": "area-setagaya",
+    "prefecture": "東京都",
+    "name": "世田谷区",
+    "active": true,
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "municipalityId": "muni-komae",
+    "areaId": "area-setagaya",
+    "prefecture": "東京都",
+    "name": "狛江市",
+    "active": true,
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "municipalityId": "muni-suginami",
+    "areaId": "area-suginami",
+    "prefecture": "東京都",
+    "name": "杉並区",
+    "active": true,
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "municipalityId": "muni-chofu",
+    "areaId": "area-chofu",
+    "prefecture": "東京都",
+    "name": "調布市",
+    "active": true,
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  },
+  {
+    "municipalityId": "muni-mitaka",
+    "areaId": "area-mitaka",
+    "prefecture": "東京都",
+    "name": "三鷹市",
+    "active": true,
+    "createdAt": "2026-06-13T00:00:00.000Z",
+    "updatedAt": "2026-06-13T00:00:00.000Z"
+  }
+]

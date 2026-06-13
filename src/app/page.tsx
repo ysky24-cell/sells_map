@@ -35,6 +35,7 @@ import {
   FormEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -52,7 +53,7 @@ import {
   findDuplicateCandidates,
   findVisitWarningsForLocations,
 } from "@/lib/duplicates";
-import { mockGeocode, normalizeAddress } from "@/lib/geo";
+import { mockGeocode, mockReverseGeocode, normalizeAddress } from "@/lib/geo";
 import { optimizeRoutePoints } from "@/lib/route/mock-route-service";
 import { getStatusMeta, locationStatusOptions } from "@/lib/status";
 import { mockUsers, findUser } from "@/lib/users";
@@ -66,16 +67,21 @@ import {
   visitResultToStatus,
 } from "@/lib/visits";
 import seedLocations from "../../data/locations.json";
+import seedJaAreas from "../../data/ja-areas.json";
+import seedMunicipalities from "../../data/municipalities.json";
 import seedNotes from "../../data/notes.json";
 import seedVisitPlanItems from "../../data/visit-plan-items.json";
 import seedVisitPlans from "../../data/visit-plans.json";
 import seedVisitRecords from "../../data/visit-records.json";
 import type {
+  AreaTracePoint,
   DuplicateCandidate,
   HandwrittenNote,
+  JaArea,
   Location,
   LocationInput,
   LocationStatus,
+  Municipality,
   OptimizedRoute,
   User,
   VisitPlan,
@@ -93,12 +99,17 @@ type LocationFormState = {
   lng: string;
   status: LocationStatus;
   assignedUserId: string;
+  areaId: string;
+  municipalityId: string;
   constructionDate: string;
   lastVisitDate: string;
   nextInspectionDate: string;
   memo: string;
   tags: string;
 };
+
+type SalesKpiPeriod = "today" | "last7" | "last30" | "all";
+type VisitTimeBand = "all" | "morning" | "afternoon" | "evening" | "unknown";
 
 const emptyForm: LocationFormState = {
   customerName: "",
@@ -107,6 +118,8 @@ const emptyForm: LocationFormState = {
   lng: "",
   status: "unvisited",
   assignedUserId: "sales-001",
+  areaId: "area-setagaya",
+  municipalityId: "muni-setagaya",
   constructionDate: "",
   lastVisitDate: "",
   nextInspectionDate: "",
@@ -120,6 +133,8 @@ const storageKeys = {
   visitPlans: "sales-map.visitPlans",
   visitPlanItems: "sales-map.visitPlanItems",
   visitRecords: "sales-map.visitRecords",
+  jaAreas: "sales-map.jaAreas",
+  municipalities: "sales-map.municipalities",
 };
 
 function readLocalRecords<T>(key: string, seed: T[]): T[] {
@@ -171,6 +186,69 @@ function listStoredLocations() {
   )
     .filter((location) => !location.deletedAt)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function listStoredJaAreas() {
+  return readSeededRecords<JaArea>(
+    storageKeys.jaAreas,
+    seedJaAreas as JaArea[],
+    (area) => area.areaId,
+  )
+    .filter((area) => area.active && !area.deletedAt)
+    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+}
+
+function listStoredMunicipalities() {
+  return readSeededRecords<Municipality>(
+    storageKeys.municipalities,
+    seedMunicipalities as Municipality[],
+    (municipality) => municipality.municipalityId,
+  )
+    .filter((municipality) => municipality.active && !municipality.deletedAt)
+    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+}
+
+function inferMunicipalityFromAddress(
+  address: string,
+  municipalities: Municipality[],
+) {
+  const normalized = normalizeAddress(address);
+  return municipalities.find((municipality) =>
+    normalized.includes(municipality.name),
+  );
+}
+
+function municipalityForLocation(
+  location: Location,
+  municipalities: Municipality[],
+) {
+  return (
+    municipalities.find(
+      (municipality) => municipality.municipalityId === location.municipalityId,
+    ) ?? inferMunicipalityFromAddress(location.address, municipalities)
+  );
+}
+
+function areaForLocation(
+  location: Location,
+  jaAreas: JaArea[],
+  municipalities: Municipality[],
+) {
+  const municipality = municipalityForLocation(location, municipalities);
+  return (
+    jaAreas.find((area) => area.areaId === location.areaId) ??
+    jaAreas.find((area) => area.areaId === municipality?.areaId)
+  );
+}
+
+function taxonomyForAddress(
+  address: string,
+  jaAreas: JaArea[],
+  municipalities: Municipality[],
+) {
+  const municipality = inferMunicipalityFromAddress(address, municipalities);
+  const area = jaAreas.find((item) => item.areaId === municipality?.areaId);
+  return { area, municipality };
 }
 
 function listStoredNotes(locationId: string) {
@@ -251,7 +329,13 @@ function toDateString(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
-function toFormState(location: Location): LocationFormState {
+function toFormState(
+  location: Location,
+  jaAreas: JaArea[],
+  municipalities: Municipality[],
+): LocationFormState {
+  const municipality = municipalityForLocation(location, municipalities);
+  const area = areaForLocation(location, jaAreas, municipalities);
   return {
     locationId: location.locationId,
     customerName: location.customerName ?? "",
@@ -260,6 +344,9 @@ function toFormState(location: Location): LocationFormState {
     lng: String(location.lng),
     status: location.status,
     assignedUserId: location.assignedUserId ?? "sales-001",
+    areaId: area?.areaId ?? location.areaId ?? "area-setagaya",
+    municipalityId:
+      municipality?.municipalityId ?? location.municipalityId ?? "muni-setagaya",
     constructionDate: location.constructionDate ?? "",
     lastVisitDate: location.lastVisitDate ?? "",
     nextInspectionDate: location.nextInspectionDate ?? "",
@@ -276,6 +363,8 @@ function toLocationInput(form: LocationFormState): LocationInput {
     lng: Number(form.lng || Number.NaN),
     status: form.status,
     assignedUserId: form.assignedUserId || undefined,
+    areaId: form.areaId || undefined,
+    municipalityId: form.municipalityId || undefined,
     constructionDate: form.constructionDate || undefined,
     lastVisitDate: form.lastVisitDate || undefined,
     nextInspectionDate: form.nextInspectionDate || undefined,
@@ -290,20 +379,28 @@ function toLocationInput(form: LocationFormState): LocationInput {
 export default function Home() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
+  const [jaAreas, setJaAreas] = useState<JaArea[]>([]);
+  const [municipalities, setMunicipalities] = useState<Municipality[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | LocationStatus>("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [areaFilter, setAreaFilter] = useState("all");
+  const [municipalityFilter, setMunicipalityFilter] = useState("all");
   const [form, setForm] = useState<LocationFormState>(emptyForm);
   const [notes, setNotes] = useState<HandwrittenNote[]>([]);
   const [visitRecords, setVisitRecords] = useState<VisitRecord[]>([]);
   const [allVisitRecords, setAllVisitRecords] = useState<VisitRecord[]>([]);
   const [visitPlan, setVisitPlan] = useState<VisitPlanWithItems | null>(null);
+  const [allVisitPlans, setAllVisitPlans] = useState<VisitPlanWithItems[]>([]);
   const [visitPlanDate, setVisitPlanDate] = useState(toDateString());
   const [visitPlanUserId, setVisitPlanUserId] = useState("sales-001");
   const [mapPlanSelectionMode, setMapPlanSelectionMode] = useState(false);
   const [mapSelectedLocationIds, setMapSelectedLocationIds] = useState<string[]>([]);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  const [areaTraceMode, setAreaTraceMode] = useState(false);
+  const [areaTraceAreaId, setAreaTraceAreaId] = useState("");
+  const [areaTraceDraft, setAreaTraceDraft] = useState<AreaTracePoint[]>([]);
   const [optimizedRoute, setOptimizedRoute] = useState<OptimizedRoute | null>(null);
   const [notesLoading, setNotesLoading] = useState(false);
   const [visitPlanMessage, setVisitPlanMessage] = useState("");
@@ -322,14 +419,22 @@ export default function Home() {
     }
   }
 
+  function loadTaxonomy() {
+    setJaAreas(listStoredJaAreas());
+    setMunicipalities(listStoredMunicipalities());
+  }
+
   useEffect(() => {
     let cancelled = false;
     Promise.resolve(listStoredLocations()).then((storedLocations) => {
       if (!cancelled) {
-        setLocations(storedLocations);
-        setAllVisitRecords(listStoredAllVisitRecords());
-      }
-    });
+          setLocations(storedLocations);
+          setAllVisitRecords(listStoredAllVisitRecords());
+          setAllVisitPlans(listStoredVisitPlans({}));
+          setJaAreas(listStoredJaAreas());
+          setMunicipalities(listStoredMunicipalities());
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -345,6 +450,10 @@ export default function Home() {
   async function loadVisitRecords(locationId: string) {
     setVisitRecords(listStoredVisitRecords(locationId));
     setAllVisitRecords(listStoredAllVisitRecords());
+  }
+
+  function refreshAllVisitPlans() {
+    setAllVisitPlans(listStoredVisitPlans({}));
   }
 
   const effectiveVisitPlanUserId =
@@ -363,6 +472,7 @@ export default function Home() {
     if (existing) {
       const plan = withVisitPlanItems(existing, items);
       setVisitPlan(plan);
+      refreshAllVisitPlans();
       return plan;
     }
 
@@ -379,6 +489,7 @@ export default function Home() {
     writeLocalRecords(storageKeys.visitPlans, nextPlans);
     const data = { plan: withVisitPlanItems(plan, items) };
     setVisitPlan(data.plan);
+    refreshAllVisitPlans();
     setOptimizedRoute(null);
     return data.plan;
   }
@@ -415,6 +526,7 @@ export default function Home() {
 
     const data = { plan: withVisitPlanItems(plan, items) };
     setVisitPlan(data.plan);
+    refreshAllVisitPlans();
     setOptimizedRoute(null);
     setVisitPlanMessage("訪問先を追加しました。");
   }
@@ -466,6 +578,7 @@ export default function Home() {
     plan = withVisitPlanItems(plan, items);
 
     setVisitPlan(plan);
+    refreshAllVisitPlans();
     setOptimizedRoute(null);
     setMapSelectedLocationIds([]);
     setVisitPlanMessage(`${targetLocationIds.length}件を訪問予定に追加しました。`);
@@ -481,6 +594,130 @@ export default function Home() {
 
   function clearMapPlanSelection() {
     setMapSelectedLocationIds([]);
+  }
+
+  function beginAreaTrace(areaId: string) {
+    if (!areaId) {
+      setAdminMessage("JAエリアを選択してから境界をなぞってください。");
+      return;
+    }
+
+    setAreaTraceAreaId(areaId);
+    setAreaTraceDraft([]);
+    setAreaTraceMode(true);
+    setMapPlanSelectionMode(false);
+    setAdminMessage(
+      "地図上をドラッグしてJAエリア境界をなぞってください。描き終えたら管理者画面で保存します。",
+    );
+  }
+
+  function cancelAreaTrace() {
+    setAreaTraceMode(false);
+    setAreaTraceDraft([]);
+    setAdminMessage("JAエリア境界の下書きを破棄しました。");
+  }
+
+  function startAreaTrace(point: AreaTracePoint) {
+    if (!areaTraceMode) return;
+    setAreaTraceDraft([point]);
+  }
+
+  function appendAreaTrace(point: AreaTracePoint) {
+    if (!areaTraceMode) return;
+    setAreaTraceDraft((current) => {
+      const lastPoint = current.at(-1);
+      if (!lastPoint) return [point];
+      if (areaTraceDistance(lastPoint, point) < 1.1) return current;
+      return [...current, point];
+    });
+  }
+
+  function finishAreaTrace() {
+    if (!areaTraceMode) return;
+    setAdminMessage(
+      "JAエリア境界の下書きを作成しました。線を確認して、管理者画面で保存してください。",
+    );
+  }
+
+  function saveAreaTrace(areaId: string) {
+    if (!currentUser) return;
+    if (!areaId) {
+      setAdminMessage("保存するJAエリアを選択してください。");
+      return;
+    }
+    if (areaTraceDraft.length < 3) {
+      setAdminMessage("境界は地図上をドラッグして3点以上なぞってから保存してください。");
+      return;
+    }
+
+    const storedAreas = readSeededRecords<JaArea>(
+      storageKeys.jaAreas,
+      seedJaAreas as JaArea[],
+      (area) => area.areaId,
+    );
+    let didUpdate = false;
+    const now = nowIso();
+    const nextAreas = storedAreas.map((area) => {
+      if (area.areaId !== areaId) return area;
+      didUpdate = true;
+      return {
+        ...area,
+        boundaryTrace: {
+          points: normalizeAreaTracePoints(areaTraceDraft),
+          source: "manual_trace" as const,
+          updatedAt: now,
+          updatedBy: currentUser.userId,
+        },
+        updatedAt: now,
+      };
+    });
+
+    if (!didUpdate) {
+      setAdminMessage("保存先のJAエリアが見つかりませんでした。");
+      return;
+    }
+
+    writeLocalRecords(storageKeys.jaAreas, nextAreas);
+    loadTaxonomy();
+    setAreaTraceMode(false);
+    setAreaTraceDraft([]);
+    setAdminMessage("JAエリア境界を保存しました。営業画面の地図にも表示されます。");
+  }
+
+  function clearAreaTrace(areaId: string) {
+    if (!currentUser) return;
+    if (!areaId) {
+      setAdminMessage("境界を削除するJAエリアを選択してください。");
+      return;
+    }
+
+    const storedAreas = readSeededRecords<JaArea>(
+      storageKeys.jaAreas,
+      seedJaAreas as JaArea[],
+      (area) => area.areaId,
+    );
+    let didUpdate = false;
+    const now = nowIso();
+    const nextAreas = storedAreas.map((area) => {
+      if (area.areaId !== areaId) return area;
+      didUpdate = true;
+      return {
+        ...area,
+        boundaryTrace: undefined,
+        updatedAt: now,
+      };
+    });
+
+    if (!didUpdate) {
+      setAdminMessage("境界を削除するJAエリアが見つかりませんでした。");
+      return;
+    }
+
+    writeLocalRecords(storageKeys.jaAreas, nextAreas);
+    loadTaxonomy();
+    setAreaTraceMode(false);
+    setAreaTraceDraft([]);
+    setAdminMessage("JAエリア境界を削除しました。");
   }
 
   async function saveHandwrittenNote(params: {
@@ -592,6 +829,7 @@ export default function Home() {
     });
     writeLocalRecords(storageKeys.visitPlanItems, remaining);
     setVisitPlan(withVisitPlanItems(visitPlan, remaining));
+    refreshAllVisitPlans();
     setOptimizedRoute(null);
     setVisitPlanMessage("訪問予定から外しました。");
   }
@@ -619,6 +857,7 @@ export default function Home() {
     );
     writeLocalRecords(storageKeys.visitPlanItems, allItems);
     setVisitPlan(withVisitPlanItems(visitPlan, allItems));
+    refreshAllVisitPlans();
     setOptimizedRoute(null);
     setVisitPlanMessage("訪問順を変更しました。");
   }
@@ -669,6 +908,7 @@ export default function Home() {
     if (nextPlan) {
       setVisitPlan(withVisitPlanItems(nextPlan, allItems));
     }
+    refreshAllVisitPlans();
     setOptimizedRoute(route);
     setVisitPlanMessage("ルートを最適化しました。");
   }
@@ -682,14 +922,33 @@ export default function Home() {
     );
   }, [currentUser, locations]);
 
+  const visibleJaAreas = useMemo(() => {
+    if (!currentUser || currentUser.role === "admin") return jaAreas;
+    return jaAreas.filter((area) => currentUser.assignedAreaIds.includes(area.areaId));
+  }, [currentUser, jaAreas]);
+
+  const visibleMunicipalities = useMemo(() => {
+    const visibleAreaIds = new Set(visibleJaAreas.map((area) => area.areaId));
+    return municipalities.filter((municipality) =>
+      visibleAreaIds.has(municipality.areaId),
+    );
+  }, [municipalities, visibleJaAreas]);
+  const selectedTraceAreaId = areaTraceAreaId || jaAreas[0]?.areaId || "";
+  const activeAreaTraceMode =
+    currentUser?.role === "admin" && areaTraceMode && Boolean(selectedTraceAreaId);
+
   const filteredLocations = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return visibleByRole.filter((location) => {
+      const area = areaForLocation(location, jaAreas, municipalities);
+      const municipality = municipalityForLocation(location, municipalities);
       const matchesQuery =
         !normalizedQuery ||
         [
           location.customerName,
           location.address,
+          area?.name,
+          municipality?.name,
           location.memo,
           location.tags?.join(" "),
         ]
@@ -701,10 +960,29 @@ export default function Home() {
         statusFilter === "all" || location.status === statusFilter;
       const matchesAssignee =
         assigneeFilter === "all" || location.assignedUserId === assigneeFilter;
+      const matchesArea = areaFilter === "all" || area?.areaId === areaFilter;
+      const matchesMunicipality =
+        municipalityFilter === "all" ||
+        municipality?.municipalityId === municipalityFilter;
 
-      return matchesQuery && matchesStatus && matchesAssignee;
+      return (
+        matchesQuery &&
+        matchesStatus &&
+        matchesAssignee &&
+        matchesArea &&
+        matchesMunicipality
+      );
     });
-  }, [assigneeFilter, query, statusFilter, visibleByRole]);
+  }, [
+    areaFilter,
+    assigneeFilter,
+    jaAreas,
+    municipalities,
+    municipalityFilter,
+    query,
+    statusFilter,
+    visibleByRole,
+  ]);
 
   const selectedLocation =
     filteredLocations.find((location) => location.locationId === selectedId) ??
@@ -834,16 +1112,29 @@ export default function Home() {
   }, [currentUser, locations, visibleByRole]);
 
   function resetForm() {
+    const availableAreas =
+      currentUser?.role === "sales"
+        ? jaAreas.filter((area) => currentUser.assignedAreaIds.includes(area.areaId))
+        : jaAreas;
+    const defaultAreaId =
+      availableAreas[0]?.areaId ?? jaAreas[0]?.areaId ?? emptyForm.areaId;
+    const defaultMunicipalityId =
+      municipalities.find((municipality) => municipality.areaId === defaultAreaId)
+        ?.municipalityId ??
+      municipalities[0]?.municipalityId ??
+      emptyForm.municipalityId;
     setForm({
       ...emptyForm,
       assignedUserId:
         currentUser?.role === "sales" ? currentUser.userId : emptyForm.assignedUserId,
+      areaId: defaultAreaId,
+      municipalityId: defaultMunicipalityId,
     });
     setIsEditing(false);
   }
 
   function startEdit(location: Location) {
-    setForm(toFormState(location));
+    setForm(toFormState(location, jaAreas, municipalities));
     setIsEditing(true);
     setMessage("");
   }
@@ -856,27 +1147,59 @@ export default function Home() {
     }
 
     const result = mockGeocode(trimmedAddress);
+    const taxonomy = taxonomyForAddress(
+      result.normalizedAddress ?? trimmedAddress,
+      jaAreas,
+      municipalities,
+    );
 
     setForm((current) => ({
       ...current,
       address: result.normalizedAddress ?? trimmedAddress,
       lat: result.lat.toFixed(6),
       lng: result.lng.toFixed(6),
+      areaId: taxonomy.area?.areaId ?? current.areaId,
+      municipalityId: taxonomy.municipality?.municipalityId ?? current.municipalityId,
     }));
     setMessage("住所から位置を計算しました。");
     return result;
   }
 
   function setFormLocationFromMap(point: { lat: number; lng: number }) {
+    const reverseGeocoded = mockReverseGeocode(point, locations);
+    const shouldReplaceAddress =
+      !form.address ||
+      form.address.startsWith("地図タップ地点") ||
+      form.address.includes("地図選択・番地要確認");
+    const taxonomy = taxonomyForAddress(
+      reverseGeocoded.address,
+      jaAreas,
+      municipalities,
+    );
     setForm((current) => ({
       ...current,
       lat: point.lat.toFixed(6),
       lng: point.lng.toFixed(6),
       address:
-        current.address ||
-        `地図タップ地点 ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`,
+        !current.address ||
+        current.address.startsWith("地図タップ地点") ||
+        current.address.includes("地図選択・番地要確認")
+          ? reverseGeocoded.address
+          : current.address,
+      areaId:
+        shouldReplaceAddress && taxonomy.area ? taxonomy.area.areaId : current.areaId,
+      municipalityId:
+        shouldReplaceAddress && taxonomy.municipality
+          ? taxonomy.municipality.municipalityId
+          : current.municipalityId,
     }));
-    setMessage("地図タップで位置を指定しました。住所は必要に応じて入力してください。");
+    setMessage(
+      !shouldReplaceAddress
+        ? "地図タップで位置を指定しました。入力済みの住所はそのままです。必要に応じて修正してください。"
+        : reverseGeocoded.confidence === "nearby_location"
+        ? "地図タップで位置を指定し、近くの住所候補を入れました。正確な番地はお客さま確認後に修正してください。"
+        : "地図タップで位置を指定し、住所候補を仮入力しました。正確な住所はお客さま確認後に修正してください。",
+    );
   }
 
   async function submitLocation(event: FormEvent<HTMLFormElement>) {
@@ -1016,8 +1339,100 @@ export default function Home() {
     }
   }
 
+  function createJaArea(input: { name: string; code: string; memo: string }) {
+    if (!currentUser) return;
+    const name = input.name.trim();
+    if (!name) {
+      setAdminMessage("JAエリア名を入力してください。");
+      return;
+    }
+
+    const storedAreas = readLocalRecords<JaArea>(
+      storageKeys.jaAreas,
+      seedJaAreas as JaArea[],
+    );
+    const exists = storedAreas.some(
+      (area) => !area.deletedAt && area.name.trim() === name,
+    );
+    if (exists) {
+      setAdminMessage("同じJAエリア名がすでに登録されています。");
+      return;
+    }
+
+    const now = nowIso();
+    const area: JaArea = {
+      areaId: `area-${crypto.randomUUID()}`,
+      name,
+      code: input.code.trim() || undefined,
+      memo: input.memo.trim() || undefined,
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    writeLocalRecords(storageKeys.jaAreas, [...storedAreas, area]);
+    loadTaxonomy();
+    setAdminMessage(`${area.name} を登録しました。`);
+  }
+
+  function createMunicipality(input: {
+    areaId: string;
+    prefecture: string;
+    name: string;
+  }) {
+    if (!currentUser) return;
+    const name = input.name.trim();
+    const area = jaAreas.find((item) => item.areaId === input.areaId);
+    if (!area || !name) {
+      setAdminMessage("JAエリアと市町村名を入力してください。");
+      return;
+    }
+
+    const storedMunicipalities = readLocalRecords<Municipality>(
+      storageKeys.municipalities,
+      seedMunicipalities as Municipality[],
+    );
+    const exists = storedMunicipalities.some(
+      (municipality) =>
+        !municipality.deletedAt &&
+        municipality.areaId === input.areaId &&
+        municipality.name.trim() === name,
+    );
+    if (exists) {
+      setAdminMessage("同じJAエリア内に同じ市町村がすでに登録されています。");
+      return;
+    }
+
+    const now = nowIso();
+    const municipality: Municipality = {
+      municipalityId: `muni-${crypto.randomUUID()}`,
+      areaId: area.areaId,
+      prefecture: input.prefecture.trim() || "東京都",
+      name,
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    writeLocalRecords(storageKeys.municipalities, [
+      ...storedMunicipalities,
+      municipality,
+    ]);
+    loadTaxonomy();
+    setAdminMessage(`${area.name} に ${municipality.name} を登録しました。`);
+  }
+
   if (!currentUser) {
-    return <LoginScreen onLogin={setCurrentUser} />;
+    return (
+      <LoginScreen
+        onLogin={(user) => {
+          setCurrentUser(user);
+          setQuery("");
+          setStatusFilter("all");
+          setAssigneeFilter("all");
+          setAreaFilter("all");
+          setMunicipalityFilter("all");
+        }}
+      />
+    );
   }
 
   return (
@@ -1053,6 +1468,11 @@ export default function Home() {
               type="button"
               onClick={() => {
                 setCurrentUser(null);
+                setQuery("");
+                setStatusFilter("all");
+                setAssigneeFilter("all");
+                setAreaFilter("all");
+                setMunicipalityFilter("all");
                 resetForm();
               }}
             >
@@ -1063,16 +1483,20 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-5 px-4 py-5 xl:grid-cols-[320px_1fr]">
-        <aside className="space-y-5">
+      <div className="mx-auto grid min-w-0 max-w-7xl gap-5 px-4 py-5 xl:grid-cols-[320px_1fr]">
+        <aside className="min-w-0 space-y-5">
           <DashboardPanel
             currentUser={currentUser}
             dashboard={dashboard}
             locations={visibleByRole}
+            jaAreas={visibleJaAreas}
+            municipalities={visibleMunicipalities}
           />
           <LocationForm
             currentUser={currentUser}
             form={form}
+            jaAreas={jaAreas}
+            municipalities={municipalities}
             isEditing={isEditing}
             message={message}
             duplicateCandidates={formDuplicateCandidates}
@@ -1115,20 +1539,32 @@ export default function Home() {
           />
         </aside>
 
-        <section className="space-y-5">
+        <section className="min-w-0 space-y-5">
           <FilterBar
             query={query}
             statusFilter={statusFilter}
             assigneeFilter={assigneeFilter}
+            areaFilter={areaFilter}
+            municipalityFilter={municipalityFilter}
+            jaAreas={visibleJaAreas}
+            municipalities={visibleMunicipalities}
             onQueryChange={setQuery}
             onStatusChange={setStatusFilter}
             onAssigneeChange={setAssigneeFilter}
+            onAreaChange={(areaId) => {
+              setAreaFilter(areaId);
+              setMunicipalityFilter("all");
+            }}
+            onMunicipalityChange={setMunicipalityFilter}
           />
 
           {currentUser.role === "admin" ? (
             <AdminPanel
               locations={locations}
               visitRecords={allVisitRecords}
+              visitPlans={allVisitPlans}
+              jaAreas={jaAreas}
+              municipalities={municipalities}
               duplicateCandidates={locations
                 .flatMap((location) =>
                   findDuplicateCandidates(
@@ -1146,25 +1582,45 @@ export default function Home() {
               message={adminMessage}
               onExportCsv={exportLocationsCsv}
               onImportCsv={importLocationsCsv}
+              onCreateJaArea={createJaArea}
+              onCreateMunicipality={createMunicipality}
+              areaTraceMode={activeAreaTraceMode}
+              selectedTraceAreaId={selectedTraceAreaId}
+              areaTraceDraftCount={areaTraceDraft.length}
+              onTraceAreaChange={setAreaTraceAreaId}
+              onStartAreaTrace={beginAreaTrace}
+              onCancelAreaTrace={cancelAreaTrace}
+              onSaveAreaTrace={saveAreaTrace}
+              onClearAreaTrace={clearAreaTrace}
             />
           ) : null}
 
-          <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+          <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_360px]">
             <MockMap
               locations={filteredLocations}
+              jaAreas={jaAreas}
+              municipalities={municipalities}
               selectedId={selectedLocation?.locationId ?? null}
               planSelectionMode={mapPlanSelectionMode}
               planSelectedLocationIds={mapSelectedLocationIds}
               routeLocationIds={optimizedRoute?.orderedPointIds ?? []}
+              areaTraceMode={activeAreaTraceMode}
+              areaTraceAreaId={selectedTraceAreaId}
+              areaTraceDraft={areaTraceDraft}
               onSelect={setSelectedId}
               onTogglePlanSelection={toggleMapPlanSelection}
               onMapPick={setFormLocationFromMap}
+              onAreaTraceStart={startAreaTrace}
+              onAreaTraceAppend={appendAreaTrace}
+              onAreaTraceEnd={finishAreaTrace}
               onOpenFullscreen={() => setIsMapFullscreen(true)}
               isLoading={isLoading}
             />
             <LocationDetail
               location={selectedLocation}
               currentUser={currentUser}
+              jaAreas={jaAreas}
+              municipalities={municipalities}
               notes={notes}
               visitRecords={visitRecords}
               notesLoading={notesLoading}
@@ -1179,6 +1635,8 @@ export default function Home() {
 
           <LocationTable
             locations={filteredLocations}
+            jaAreas={jaAreas}
+            municipalities={municipalities}
             selectedId={selectedLocation?.locationId ?? null}
             onSelect={setSelectedId}
           />
@@ -1213,13 +1671,21 @@ export default function Home() {
             <div className="min-h-0 flex-1">
               <MockMap
                 locations={filteredLocations}
+                jaAreas={jaAreas}
+                municipalities={municipalities}
                 selectedId={selectedLocation?.locationId ?? null}
                 planSelectionMode={mapPlanSelectionMode}
                 planSelectedLocationIds={mapSelectedLocationIds}
                 routeLocationIds={optimizedRoute?.orderedPointIds ?? []}
+                areaTraceMode={activeAreaTraceMode}
+                areaTraceAreaId={selectedTraceAreaId}
+                areaTraceDraft={areaTraceDraft}
                 onSelect={setSelectedId}
                 onTogglePlanSelection={toggleMapPlanSelection}
                 onMapPick={setFormLocationFromMap}
+                onAreaTraceStart={startAreaTrace}
+                onAreaTraceAppend={appendAreaTrace}
+                onAreaTraceEnd={finishAreaTrace}
                 onCloseFullscreen={() => setIsMapFullscreen(false)}
                 isFullscreen
                 isLoading={isLoading}
@@ -1307,6 +1773,8 @@ function DashboardPanel({
   currentUser,
   dashboard,
   locations,
+  jaAreas,
+  municipalities,
 }: {
   currentUser: User;
   dashboard: {
@@ -1318,6 +1786,8 @@ function DashboardPanel({
     doNotVisit: number;
   };
   locations: Location[];
+  jaAreas: JaArea[];
+  municipalities: Municipality[];
 }) {
   const stats =
     currentUser.role === "admin"
@@ -1356,6 +1826,35 @@ function DashboardPanel({
           );
         })}
       </div>
+      {currentUser.role === "sales" ? (
+        <div className="mt-4 rounded-md border border-emerald-100 bg-emerald-50 p-3">
+          <p className="text-sm font-semibold text-emerald-950">担当JAエリア</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {jaAreas.map((area) => (
+              <span
+                key={area.areaId}
+                className="rounded bg-white px-2 py-1 text-xs font-medium text-emerald-900"
+              >
+                {area.name}
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 text-sm font-semibold text-emerald-950">
+            表示市町村
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {municipalities.map((municipality) => (
+              <span
+                key={municipality.municipalityId}
+                className="rounded bg-white px-2 py-1 text-xs font-medium text-emerald-900"
+              >
+                {municipality.prefecture}
+                {municipality.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1363,18 +1862,58 @@ function DashboardPanel({
 function AdminPanel({
   locations,
   visitRecords,
+  visitPlans,
+  jaAreas,
+  municipalities,
   duplicateCandidates,
   message,
   onExportCsv,
   onImportCsv,
+  onCreateJaArea,
+  onCreateMunicipality,
+  areaTraceMode,
+  selectedTraceAreaId,
+  areaTraceDraftCount,
+  onTraceAreaChange,
+  onStartAreaTrace,
+  onCancelAreaTrace,
+  onSaveAreaTrace,
+  onClearAreaTrace,
 }: {
   locations: Location[];
   visitRecords: VisitRecord[];
+  visitPlans: VisitPlanWithItems[];
+  jaAreas: JaArea[];
+  municipalities: Municipality[];
   duplicateCandidates: DuplicateCandidate[];
   message: string;
   onExportCsv: () => void;
   onImportCsv: (event: ChangeEvent<HTMLInputElement>) => void;
+  onCreateJaArea: (input: { name: string; code: string; memo: string }) => void;
+  onCreateMunicipality: (input: {
+    areaId: string;
+    prefecture: string;
+    name: string;
+  }) => void;
+  areaTraceMode: boolean;
+  selectedTraceAreaId: string;
+  areaTraceDraftCount: number;
+  onTraceAreaChange: (areaId: string) => void;
+  onStartAreaTrace: (areaId: string) => void;
+  onCancelAreaTrace: () => void;
+  onSaveAreaTrace: (areaId: string) => void;
+  onClearAreaTrace: (areaId: string) => void;
 }) {
+  const [areaForm, setAreaForm] = useState({ name: "", code: "", memo: "" });
+  const [municipalityForm, setMunicipalityForm] = useState({
+    areaId: jaAreas[0]?.areaId ?? "",
+    prefecture: "東京都",
+    name: "",
+  });
+  const selectedMunicipalityAreaId =
+    municipalityForm.areaId || jaAreas[0]?.areaId || "";
+  const selectedTraceArea =
+    jaAreas.find((area) => area.areaId === selectedTraceAreaId) ?? jaAreas[0];
   const statusCounts = locationStatusOptions
     .map((option) => ({
       ...option,
@@ -1406,15 +1945,16 @@ function AdminPanel({
   } satisfies Record<AdminActionItem["severity"], string>;
 
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+    <>
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <BarChart3 size={18} />
-            <h2 className="font-semibold">管理者画面</h2>
+            <ShieldCheck size={18} />
+            <h2 className="font-semibold">システム管理ダッシュボード</h2>
           </div>
           <p className="mt-1 text-sm text-zinc-600">
-            担当者別・ステータス別の状況確認とCSV入出力を行います。
+            地点データ、担当範囲、CSV、JAエリア境界などの運用設定を管理します。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1454,6 +1994,239 @@ function AdminPanel({
           label="重複候補"
           value={`${duplicateCandidates.length}`}
         />
+      </div>
+
+      <div className="mt-4 rounded-md border border-zinc-200 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold">JAエリア・市町村管理</h3>
+            <p className="mt-1 text-sm text-zinc-600">
+              営業担当者の担当範囲として使うJAエリアと、その中の市町村を登録します。
+            </p>
+          </div>
+          <span className="rounded bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-700">
+            {jaAreas.length}エリア / {municipalities.length}市町村
+          </span>
+        </div>
+
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          <form
+            className="rounded-md border border-zinc-100 bg-zinc-50 p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onCreateJaArea(areaForm);
+              if (areaForm.name.trim()) {
+                setAreaForm({ name: "", code: "", memo: "" });
+              }
+            }}
+          >
+            <p className="text-sm font-semibold text-zinc-800">JAエリア登録</p>
+            <div className="mt-3 grid gap-2">
+              <input
+                className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-emerald-600"
+                value={areaForm.name}
+                placeholder="例: JA東京中央 世田谷エリア"
+                onChange={(event) =>
+                  setAreaForm((current) => ({ ...current, name: event.target.value }))
+                }
+              />
+              <input
+                className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-emerald-600"
+                value={areaForm.code}
+                placeholder="エリアコード 任意"
+                onChange={(event) =>
+                  setAreaForm((current) => ({ ...current, code: event.target.value }))
+                }
+              />
+              <input
+                className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-emerald-600"
+                value={areaForm.memo}
+                placeholder="メモ 任意"
+                onChange={(event) =>
+                  setAreaForm((current) => ({ ...current, memo: event.target.value }))
+                }
+              />
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+              >
+                <Plus size={16} />
+                エリアを登録
+              </button>
+            </div>
+          </form>
+
+          <form
+            className="rounded-md border border-zinc-100 bg-zinc-50 p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onCreateMunicipality({
+                ...municipalityForm,
+                areaId: selectedMunicipalityAreaId,
+              });
+              if (municipalityForm.name.trim()) {
+                setMunicipalityForm((current) => ({ ...current, name: "" }));
+              }
+            }}
+          >
+            <p className="text-sm font-semibold text-zinc-800">市町村登録</p>
+            <div className="mt-3 grid gap-2">
+              <select
+                className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-emerald-600"
+                value={selectedMunicipalityAreaId}
+                onChange={(event) =>
+                  setMunicipalityForm((current) => ({
+                    ...current,
+                    areaId: event.target.value,
+                  }))
+                }
+              >
+                {jaAreas.map((area) => (
+                  <option key={area.areaId} value={area.areaId}>
+                    {area.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-emerald-600"
+                value={municipalityForm.prefecture}
+                placeholder="都道府県"
+                onChange={(event) =>
+                  setMunicipalityForm((current) => ({
+                    ...current,
+                    prefecture: event.target.value,
+                  }))
+                }
+              />
+              <input
+                className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-emerald-600"
+                value={municipalityForm.name}
+                placeholder="例: 世田谷区"
+                onChange={(event) =>
+                  setMunicipalityForm((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+              />
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+              >
+                <Plus size={16} />
+                市町村を登録
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          <div className="rounded-md bg-white p-3">
+            <p className="text-xs font-semibold text-zinc-500">登録済みJAエリア</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {jaAreas.map((area) => (
+                <span
+                  key={area.areaId}
+                  className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-800"
+                >
+                  {area.name}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-md bg-white p-3">
+            <p className="text-xs font-semibold text-zinc-500">登録済み市町村</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {municipalities.map((municipality) => (
+                <span
+                  key={municipality.municipalityId}
+                  className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-800"
+                >
+                  {municipality.prefecture}
+                  {municipality.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-md border border-dashed border-emerald-300 bg-emerald-50/60 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-emerald-950">
+                JAエリア境界を地図でなぞる
+              </p>
+              <p className="mt-1 text-sm leading-6 text-emerald-900">
+                JA独自の区分を、緯度経度ではなく地図上の手書き境界として保存します。
+              </p>
+            </div>
+            <span className="rounded bg-white px-2 py-1 text-xs font-semibold text-emerald-950">
+              保存済み {selectedTraceArea?.boundaryTrace?.points.length ?? 0}点 /
+              下書き {areaTraceDraftCount}点
+            </span>
+          </div>
+
+          <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto]">
+            <select
+              className="h-10 rounded-md border border-emerald-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+              value={selectedTraceAreaId}
+              onChange={(event) => onTraceAreaChange(event.target.value)}
+              disabled={jaAreas.length === 0}
+            >
+              {jaAreas.map((area) => (
+                <option key={area.areaId} value={area.areaId}>
+                  {area.name}
+                </option>
+              ))}
+            </select>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                onClick={() => onStartAreaTrace(selectedTraceAreaId)}
+                disabled={!selectedTraceAreaId}
+              >
+                <Brush size={16} />
+                {areaTraceMode ? "なぞり直す" : "地図でなぞる"}
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
+                onClick={() => onSaveAreaTrace(selectedTraceAreaId)}
+                disabled={!selectedTraceAreaId || areaTraceDraftCount < 3}
+              >
+                <Save size={16} />
+                保存
+              </button>
+              {areaTraceMode ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50"
+                  onClick={onCancelAreaTrace}
+                >
+                  <X size={16} />
+                  中止
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+                onClick={() => onClearAreaTrace(selectedTraceAreaId)}
+                disabled={!selectedTraceAreaId}
+              >
+                <Eraser size={16} />
+                境界を消す
+              </button>
+            </div>
+          </div>
+
+          {areaTraceMode ? (
+            <p className="mt-2 rounded bg-white px-3 py-2 text-xs font-medium text-emerald-950">
+              地図上でドラッグすると境界線の下書きが作られます。描き終えたらこの「保存」を押してください。
+            </p>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -1540,8 +2313,605 @@ function AdminPanel({
           </ul>
         )}
       </div>
+      </section>
+
+      <SalesKpiDashboard
+        locations={locations}
+        visitRecords={visitRecords}
+        visitPlans={visitPlans}
+        jaAreas={jaAreas}
+        municipalities={municipalities}
+      />
+    </>
+  );
+}
+
+const salesKpiPeriodOptions = [
+  { value: "today", label: "本日" },
+  { value: "last7", label: "直近7日" },
+  { value: "last30", label: "直近30日" },
+  { value: "all", label: "全期間" },
+] satisfies { value: SalesKpiPeriod; label: string }[];
+
+const visitTimeBandOptions = [
+  { value: "all", label: "すべての時間帯" },
+  { value: "morning", label: "午前" },
+  { value: "afternoon", label: "午後" },
+  { value: "evening", label: "夕方以降" },
+  { value: "unknown", label: "未設定" },
+] satisfies { value: VisitTimeBand; label: string }[];
+
+type SalesKpiVisitContext = {
+  record: VisitRecord;
+  location: Location;
+  area?: JaArea;
+  municipality?: Municipality;
+  timeBand: Exclude<VisitTimeBand, "all">;
+};
+
+type SalesKpiPlanContext = {
+  plan: VisitPlanWithItems;
+  item: VisitPlanItem;
+  location: Location;
+  area?: JaArea;
+  municipality?: Municipality;
+  timeBand: Exclude<VisitTimeBand, "all">;
+};
+
+type SalesKpiBreakdownRow = {
+  label: string;
+  visits: number;
+  nextActions: number;
+  prospects: number;
+  contracts: number;
+  nextActionRate: number;
+};
+
+function SalesKpiDashboard({
+  locations,
+  visitRecords,
+  visitPlans,
+  jaAreas,
+  municipalities,
+}: {
+  locations: Location[];
+  visitRecords: VisitRecord[];
+  visitPlans: VisitPlanWithItems[];
+  jaAreas: JaArea[];
+  municipalities: Municipality[];
+}) {
+  const [periodFilter, setPeriodFilter] = useState<SalesKpiPeriod>("last30");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [areaFilter, setAreaFilter] = useState("all");
+  const [municipalityFilter, setMunicipalityFilter] = useState("all");
+  const [timeBandFilter, setTimeBandFilter] = useState<VisitTimeBand>("all");
+
+  const locationMap = useMemo(
+    () => new Map(locations.map((location) => [location.locationId, location])),
+    [locations],
+  );
+  const availableMunicipalities = useMemo(
+    () =>
+      areaFilter === "all"
+        ? municipalities
+        : municipalities.filter((municipality) => municipality.areaId === areaFilter),
+    [areaFilter, municipalities],
+  );
+
+  const matchesSharedFilters = useCallback((params: {
+    userId: string;
+    area?: JaArea;
+    municipality?: Municipality;
+    timeBand: Exclude<VisitTimeBand, "all">;
+  }) => {
+    const matchesAssignee =
+      assigneeFilter === "all" || params.userId === assigneeFilter;
+    const matchesArea = areaFilter === "all" || params.area?.areaId === areaFilter;
+    const matchesMunicipality =
+      municipalityFilter === "all" ||
+      params.municipality?.municipalityId === municipalityFilter;
+    const matchesTimeBand =
+      timeBandFilter === "all" || params.timeBand === timeBandFilter;
+
+    return matchesAssignee && matchesArea && matchesMunicipality && matchesTimeBand;
+  }, [areaFilter, assigneeFilter, municipalityFilter, timeBandFilter]);
+
+  const filteredVisitContexts = useMemo(
+    () =>
+      visitRecords
+        .map((record): SalesKpiVisitContext | null => {
+          const location = locationMap.get(record.locationId);
+          if (!location) return null;
+          return {
+            record,
+            location,
+            area: areaForLocation(location, jaAreas, municipalities),
+            municipality: municipalityForLocation(location, municipalities),
+            timeBand: visitTimeBandForDateTime(record.visitedAt),
+          };
+        })
+        .filter((context): context is SalesKpiVisitContext => Boolean(context))
+        .filter((context) =>
+          isDateKeyInSalesKpiPeriod(
+            toDateString(new Date(context.record.visitedAt)),
+            periodFilter,
+          ),
+        )
+        .filter((context) =>
+          matchesSharedFilters({
+            userId: context.record.userId,
+            area: context.area,
+            municipality: context.municipality,
+            timeBand: context.timeBand,
+          }),
+        ),
+    [
+      jaAreas,
+      locationMap,
+      matchesSharedFilters,
+      municipalities,
+      periodFilter,
+      visitRecords,
+    ],
+  );
+
+  const filteredPlanContexts = useMemo(
+    () =>
+      visitPlans
+        .filter((plan) => isDateKeyInSalesKpiPeriod(plan.date, periodFilter))
+        .flatMap((plan) =>
+          plan.items.map((item): SalesKpiPlanContext | null => {
+            const location = locationMap.get(item.locationId);
+            if (!location) return null;
+            return {
+              plan,
+              item,
+              location,
+              area: areaForLocation(location, jaAreas, municipalities),
+              municipality: municipalityForLocation(location, municipalities),
+              timeBand: visitTimeBandForPlanItem(item),
+            };
+          }),
+        )
+        .filter((context): context is SalesKpiPlanContext => Boolean(context))
+        .filter((context) =>
+          matchesSharedFilters({
+            userId: context.plan.userId,
+            area: context.area,
+            municipality: context.municipality,
+            timeBand: context.timeBand,
+          }),
+        ),
+    [
+      jaAreas,
+      locationMap,
+      matchesSharedFilters,
+      municipalities,
+      periodFilter,
+      visitPlans,
+    ],
+  );
+
+  const recordedLocationIds = new Set(
+    filteredVisitContexts.map((context) => context.location.locationId),
+  );
+  const completedPlannedVisits = filteredPlanContexts.filter((context) =>
+    recordedLocationIds.has(context.location.locationId),
+  ).length;
+  const nextActionCount = filteredVisitContexts.filter(
+    (context) => Boolean(context.record.nextActionDate),
+  ).length;
+  const timeWindowCount = filteredPlanContexts.filter(
+    (context) => Boolean(context.item.preferredTimeWindow),
+  ).length;
+  const contractedCount = filteredVisitContexts.filter(
+    (context) => context.record.result === "contracted",
+  ).length;
+  const prospectCount = filteredVisitContexts.filter((context) =>
+    ["prospect", "contracted"].includes(context.record.result),
+  ).length;
+  const absentCount = filteredVisitContexts.filter(
+    (context) => context.record.result === "absent",
+  ).length;
+  const lostCount = filteredVisitContexts.filter(
+    (context) => context.record.result === "lost",
+  ).length;
+  const plannedCount = filteredPlanContexts.length;
+  const visitRecordCount = filteredVisitContexts.length;
+
+  const controlKpis = [
+    {
+      label: "訪問予定数",
+      value: `${plannedCount}件`,
+      note: "地図選択・予定作成で増やせる行動量",
+    },
+    {
+      label: "訪問記録数",
+      value: `${visitRecordCount}件`,
+      note: "訪問後に入力できた活動量",
+    },
+    {
+      label: "予定消化率",
+      value: formatPercent(completedPlannedVisits, plannedCount),
+      note: `${completedPlannedVisits}/${plannedCount}件を訪問記録済み`,
+    },
+    {
+      label: "次アクション設定率",
+      value: formatPercent(nextActionCount, visitRecordCount),
+      note: `${nextActionCount}/${visitRecordCount}件に次回予定あり`,
+    },
+    {
+      label: "時間帯指定率",
+      value: formatPercent(timeWindowCount, plannedCount),
+      note: "訪問時間帯を事前に置けている割合",
+    },
+  ];
+  const resultKpis = [
+    {
+      label: "成約率",
+      value: formatPercent(contractedCount, visitRecordCount),
+      note: `${contractedCount}件成約`,
+    },
+    {
+      label: "見込み化率",
+      value: formatPercent(prospectCount, visitRecordCount),
+      note: `${prospectCount}件が見込み・成約`,
+    },
+    {
+      label: "不在率",
+      value: formatPercent(absentCount, visitRecordCount),
+      note: `${absentCount}件が不在`,
+    },
+    {
+      label: "失注率",
+      value: formatPercent(lostCount, visitRecordCount),
+      note: `${lostCount}件が失注`,
+    },
+  ];
+  const areaBreakdownRows = buildSalesKpiBreakdownRows(
+    filteredVisitContexts,
+    (context) => context.area?.name ?? "JAエリア未設定",
+  );
+  const municipalityBreakdownRows = buildSalesKpiBreakdownRows(
+    filteredVisitContexts,
+    (context) =>
+      context.municipality
+        ? `${context.municipality.prefecture}${context.municipality.name}`
+        : "市町村未設定",
+  );
+  const timeBandBreakdownRows = buildSalesKpiBreakdownRows(
+    filteredVisitContexts,
+    (context) => visitTimeBandLabel(context.timeBand),
+  );
+
+  return (
+    <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <BarChart3 size={18} />
+            <h2 className="font-semibold">営業KPI管理ダッシュボード</h2>
+          </div>
+          <p className="mt-1 text-sm leading-6 text-zinc-600">
+            営業担当者が自分で動かせる行動KPIを先に確認し、成約率などの結果KPIは補助指標として見ます。
+          </p>
+        </div>
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          集計更新は1時間単位。位置情報は機微情報のため、個人のリアルタイム追跡ではなく
+          エリア・市町村・時間帯単位で扱います。
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">期間</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={periodFilter}
+            onChange={(event) =>
+              setPeriodFilter(event.target.value as SalesKpiPeriod)
+            }
+          >
+            {salesKpiPeriodOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">担当者</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={assigneeFilter}
+            onChange={(event) => setAssigneeFilter(event.target.value)}
+          >
+            <option value="all">すべての担当者</option>
+            {mockUsers
+              .filter((user) => user.role === "sales")
+              .map((user) => (
+                <option key={user.userId} value={user.userId}>
+                  {user.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">JAエリア</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={areaFilter}
+            onChange={(event) => {
+              const nextAreaId = event.target.value;
+              setAreaFilter(nextAreaId);
+              if (
+                municipalityFilter !== "all" &&
+                !municipalities.some(
+                  (municipality) =>
+                    municipality.municipalityId === municipalityFilter &&
+                    (nextAreaId === "all" || municipality.areaId === nextAreaId),
+                )
+              ) {
+                setMunicipalityFilter("all");
+              }
+            }}
+          >
+            <option value="all">すべてのJAエリア</option>
+            {jaAreas.map((area) => (
+              <option key={area.areaId} value={area.areaId}>
+                {area.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">市町村</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={municipalityFilter}
+            onChange={(event) => setMunicipalityFilter(event.target.value)}
+          >
+            <option value="all">すべての市町村</option>
+            {availableMunicipalities.map((municipality) => (
+              <option
+                key={municipality.municipalityId}
+                value={municipality.municipalityId}
+              >
+                {municipality.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">訪問時間帯</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={timeBandFilter}
+            onChange={(event) =>
+              setTimeBandFilter(event.target.value as VisitTimeBand)
+            }
+          >
+            {visitTimeBandOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-4 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
+        最終集計目安: {hourlyKpiUpdateLabel()} / KPI対象:
+        訪問予定 {plannedCount}件、訪問記録 {visitRecordCount}件
+      </div>
+
+      <div className="mt-4">
+        <h3 className="text-sm font-semibold">営業コントロールKPI</h3>
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {controlKpis.map((kpi) => (
+            <KpiMetricCard key={kpi.label} {...kpi} tone="control" />
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <h3 className="text-sm font-semibold">結果KPI 補助指標</h3>
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {resultKpis.map((kpi) => (
+            <KpiMetricCard key={kpi.label} {...kpi} tone="result" />
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-3">
+        <SalesKpiBreakdownTable
+          title="JAエリア別"
+          rows={areaBreakdownRows}
+        />
+        <SalesKpiBreakdownTable
+          title="市町村別"
+          rows={municipalityBreakdownRows}
+        />
+        <SalesKpiBreakdownTable
+          title="訪問時間帯別"
+          rows={timeBandBreakdownRows}
+        />
+      </div>
     </section>
   );
+}
+
+function KpiMetricCard({
+  label,
+  value,
+  note,
+  tone,
+}: {
+  label: string;
+  value: string;
+  note: string;
+  tone: "control" | "result";
+}) {
+  const toneClass =
+    tone === "control"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+      : "border-zinc-200 bg-zinc-50 text-zinc-900";
+
+  return (
+    <div className={`rounded-md border p-3 ${toneClass}`}>
+      <p className="text-xs font-semibold">{label}</p>
+      <p className="mt-2 text-2xl font-semibold">{value}</p>
+      <p className="mt-2 text-xs leading-5 opacity-80">{note}</p>
+    </div>
+  );
+}
+
+function SalesKpiBreakdownTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: SalesKpiBreakdownRow[];
+}) {
+  return (
+    <div className="rounded-md border border-zinc-200 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <span className="rounded bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-700">
+          {rows.length}件
+        </span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="mt-3 text-sm text-zinc-600">条件に合う訪問記録はありません。</p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="min-w-full text-left text-xs">
+            <thead className="border-b border-zinc-200 text-zinc-500">
+              <tr>
+                <th className="pb-2 pr-3 font-medium">区分</th>
+                <th className="pb-2 pr-3 font-medium">訪問</th>
+                <th className="pb-2 pr-3 font-medium">次アクション</th>
+                <th className="pb-2 pr-3 font-medium">見込み</th>
+                <th className="pb-2 font-medium">成約</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 6).map((row) => (
+                <tr key={row.label} className="border-b border-zinc-100 last:border-0">
+                  <td className="max-w-40 truncate py-2 pr-3 font-medium text-zinc-900">
+                    {row.label}
+                  </td>
+                  <td className="py-2 pr-3 text-zinc-700">{row.visits}</td>
+                  <td className="py-2 pr-3 text-zinc-700">
+                    {formatPercent(row.nextActions, row.visits)}
+                  </td>
+                  <td className="py-2 pr-3 text-zinc-700">{row.prospects}</td>
+                  <td className="py-2 text-zinc-700">{row.contracts}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function buildSalesKpiBreakdownRows(
+  contexts: SalesKpiVisitContext[],
+  labelForContext: (context: SalesKpiVisitContext) => string,
+): SalesKpiBreakdownRow[] {
+  const rows = new Map<string, SalesKpiBreakdownRow>();
+  contexts.forEach((context) => {
+    const label = labelForContext(context);
+    const current =
+      rows.get(label) ??
+      {
+        label,
+        visits: 0,
+        nextActions: 0,
+        prospects: 0,
+        contracts: 0,
+        nextActionRate: 0,
+      };
+
+    current.visits += 1;
+    if (context.record.nextActionDate) current.nextActions += 1;
+    if (["prospect", "contracted"].includes(context.record.result)) {
+      current.prospects += 1;
+    }
+    if (context.record.result === "contracted") current.contracts += 1;
+    current.nextActionRate = current.visits
+      ? Math.round((current.nextActions / current.visits) * 100)
+      : 0;
+    rows.set(label, current);
+  });
+
+  return [...rows.values()].sort(
+    (a, b) =>
+      b.visits - a.visits ||
+      b.nextActionRate - a.nextActionRate ||
+      a.label.localeCompare(b.label, "ja"),
+  );
+}
+
+function addDaysToDateKey(dateKey: string, offsetDays: number) {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
+
+function isDateKeyInSalesKpiPeriod(dateKey: string, period: SalesKpiPeriod) {
+  if (period === "all") return true;
+  const today = toDateString();
+  if (period === "today") return dateKey === today;
+  const startDate = addDaysToDateKey(today, period === "last7" ? -6 : -29);
+  return dateKey >= startDate && dateKey <= today;
+}
+
+function visitTimeBandForDateTime(dateTime: string): Exclude<VisitTimeBand, "all"> {
+  const hour = new Date(dateTime).getHours();
+  if (Number.isNaN(hour)) return "unknown";
+  return visitTimeBandForHour(hour);
+}
+
+function visitTimeBandForPlanItem(
+  item: VisitPlanItem,
+): Exclude<VisitTimeBand, "all"> {
+  const start = item.preferredTimeWindow?.start;
+  if (!start) return "unknown";
+  const hour = Number(start.split(":")[0]);
+  if (Number.isNaN(hour)) return "unknown";
+  return visitTimeBandForHour(hour);
+}
+
+function visitTimeBandForHour(hour: number): Exclude<VisitTimeBand, "all"> {
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  return "evening";
+}
+
+function visitTimeBandLabel(timeBand: Exclude<VisitTimeBand, "all">) {
+  return (
+    visitTimeBandOptions.find((option) => option.value === timeBand)?.label ??
+    "未設定"
+  );
+}
+
+function formatPercent(numerator: number, denominator: number) {
+  if (denominator <= 0) return "0%";
+  return `${Math.round((numerator / denominator) * 100)}%`;
+}
+
+function hourlyKpiUpdateLabel(date = new Date()) {
+  const rounded = new Date(date);
+  rounded.setMinutes(0, 0, 0);
+  return new Intl.DateTimeFormat("ja-JP", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(rounded);
 }
 
 function VisitPlanPanel({
@@ -1909,20 +3279,36 @@ function FilterBar({
   query,
   statusFilter,
   assigneeFilter,
+  areaFilter,
+  municipalityFilter,
+  jaAreas,
+  municipalities,
   onQueryChange,
   onStatusChange,
   onAssigneeChange,
+  onAreaChange,
+  onMunicipalityChange,
 }: {
   query: string;
   statusFilter: "all" | LocationStatus;
   assigneeFilter: string;
+  areaFilter: string;
+  municipalityFilter: string;
+  jaAreas: JaArea[];
+  municipalities: Municipality[];
   onQueryChange: (value: string) => void;
   onStatusChange: (value: "all" | LocationStatus) => void;
   onAssigneeChange: (value: string) => void;
+  onAreaChange: (value: string) => void;
+  onMunicipalityChange: (value: string) => void;
 }) {
+  const municipalityOptions =
+    areaFilter === "all"
+      ? municipalities
+      : municipalities.filter((municipality) => municipality.areaId === areaFilter);
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-      <div className="grid gap-3 lg:grid-cols-[1fr_190px_190px]">
+      <div className="grid gap-3 lg:grid-cols-[1fr_190px_190px_190px_190px]">
         <label className="relative">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
@@ -1934,6 +3320,45 @@ function FilterBar({
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="顧客名・住所・メモ・タグで検索"
           />
+        </label>
+        <label className="relative">
+          <MapPin
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+            size={18}
+          />
+          <select
+            className="h-11 w-full appearance-none rounded-md border border-zinc-300 bg-white pl-10 pr-3 text-sm outline-none focus:border-emerald-600"
+            value={areaFilter}
+            onChange={(event) => onAreaChange(event.target.value)}
+          >
+            <option value="all">すべてのJAエリア</option>
+            {jaAreas.map((area) => (
+              <option key={area.areaId} value={area.areaId}>
+                {area.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="relative">
+          <MapPin
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+            size={18}
+          />
+          <select
+            className="h-11 w-full appearance-none rounded-md border border-zinc-300 bg-white pl-10 pr-3 text-sm outline-none focus:border-emerald-600"
+            value={municipalityFilter}
+            onChange={(event) => onMunicipalityChange(event.target.value)}
+          >
+            <option value="all">すべての市町村</option>
+            {municipalityOptions.map((municipality) => (
+              <option
+                key={municipality.municipalityId}
+                value={municipality.municipalityId}
+              >
+                {municipality.name}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="relative">
           <Filter
@@ -1982,31 +3407,52 @@ function FilterBar({
 
 function MockMap({
   locations,
+  jaAreas,
+  municipalities,
   selectedId,
   planSelectionMode,
   planSelectedLocationIds,
   routeLocationIds,
+  areaTraceMode = false,
+  areaTraceAreaId,
+  areaTraceDraft = [],
   onSelect,
   onTogglePlanSelection,
   onMapPick,
+  onAreaTraceStart,
+  onAreaTraceAppend,
+  onAreaTraceEnd,
   onOpenFullscreen,
   onCloseFullscreen,
   isFullscreen = false,
   isLoading,
 }: {
   locations: Location[];
+  jaAreas: JaArea[];
+  municipalities: Municipality[];
   selectedId: string | null;
   planSelectionMode: boolean;
   planSelectedLocationIds: string[];
   routeLocationIds: string[];
+  areaTraceMode?: boolean;
+  areaTraceAreaId?: string;
+  areaTraceDraft?: AreaTracePoint[];
   onSelect: (locationId: string) => void;
   onTogglePlanSelection: (locationId: string) => void;
   onMapPick: (point: { lat: number; lng: number }) => void;
+  onAreaTraceStart?: (point: AreaTracePoint) => void;
+  onAreaTraceAppend?: (point: AreaTracePoint) => void;
+  onAreaTraceEnd?: () => void;
   onOpenFullscreen?: () => void;
   onCloseFullscreen?: () => void;
   isFullscreen?: boolean;
   isLoading: boolean;
 }) {
+  const [hoveredLocationId, setHoveredLocationId] = useState<string | null>(null);
+  const [closedPopupLocationId, setClosedPopupLocationId] = useState<string | null>(
+    null,
+  );
+  const isTracingAreaRef = useRef(false);
   const bounds = useMemo(() => {
     const lats = locations.map((location) => location.lat);
     const lngs = locations.map((location) => location.lng);
@@ -2019,7 +3465,7 @@ function MockMap({
   }, [locations]);
 
   function handleMapClick(event: ReactMouseEvent<HTMLElement>) {
-    if (planSelectionMode) return;
+    if (planSelectionMode || areaTraceMode) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const xPercent = ((event.clientX - rect.left) / rect.width) * 100;
     const yPercent = ((event.clientY - rect.top) / rect.height) * 100;
@@ -2034,6 +3480,43 @@ function MockMap({
       lat: Number(lat.toFixed(6)),
       lng: Number(lng.toFixed(6)),
     });
+    setClosedPopupLocationId(selectedId);
+  }
+
+  function pointFromTracePointer(event: PointerEvent<HTMLElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return normalizeAreaTracePoint({
+      x: ((event.clientX - rect.left) / rect.width) * 100,
+      y: ((event.clientY - rect.top) / rect.height) * 100,
+    });
+  }
+
+  function handleAreaTracePointerDown(event: PointerEvent<HTMLElement>) {
+    if (!areaTraceMode || !onAreaTraceStart) return;
+    event.preventDefault();
+    event.stopPropagation();
+    isTracingAreaRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setClosedPopupLocationId(selectedId);
+    onAreaTraceStart(pointFromTracePointer(event));
+  }
+
+  function handleAreaTracePointerMove(event: PointerEvent<HTMLElement>) {
+    if (!areaTraceMode || !isTracingAreaRef.current || !onAreaTraceAppend) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onAreaTraceAppend(pointFromTracePointer(event));
+  }
+
+  function finishAreaTracePointer(event: PointerEvent<HTMLElement>) {
+    if (!areaTraceMode || !isTracingAreaRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    isTracingAreaRef.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    onAreaTraceEnd?.();
   }
 
   function positionFor(location: Location) {
@@ -2059,15 +3542,44 @@ function MockMap({
       return `${position.x},${position.y}`;
     })
     .join(" ");
+  const popupLocationId =
+    hoveredLocationId ??
+    (selectedId && selectedId !== closedPopupLocationId ? selectedId : null);
+  const popupLocation =
+    locations.find((location) => location.locationId === popupLocationId) ?? null;
+  const popupPosition = popupLocation ? positionFor(popupLocation) : null;
+  const tracedAreas = jaAreas
+    .map((area, index) => ({
+      area,
+      index,
+      points: area.boundaryTrace?.points ?? [],
+    }))
+    .filter(({ points }) => points.length >= 3);
+  const activeTraceArea = jaAreas.find((area) => area.areaId === areaTraceAreaId);
+  const mapStatusText = isLoading
+    ? "読み込み中"
+    : areaTraceMode
+      ? `${activeTraceArea?.name ?? "JAエリア"} の境界をなぞり中`
+      : planSelectionMode
+        ? `${locations.length}件表示・ピンを複数選択`
+        : `${locations.length}件表示・地図タップで位置指定`;
 
   return (
     <section
-      className={`relative overflow-hidden rounded-lg border border-zinc-200 bg-[#e9efe7] shadow-sm ${
+      className={`relative min-w-0 overflow-hidden rounded-lg border border-zinc-200 bg-[#e9efe7] shadow-sm ${
         isFullscreen ? "h-full min-h-[520px]" : "min-h-[520px]"
       } ${
-        planSelectionMode ? "cursor-default" : "cursor-crosshair"
+        areaTraceMode
+          ? "cursor-crosshair touch-none"
+          : planSelectionMode
+            ? "cursor-default"
+            : "cursor-crosshair"
       }`}
       onClick={handleMapClick}
+      onPointerDown={handleAreaTracePointerDown}
+      onPointerMove={handleAreaTracePointerMove}
+      onPointerUp={finishAreaTracePointer}
+      onPointerCancel={finishAreaTracePointer}
     >
       <div className="absolute inset-0 grid grid-cols-6 grid-rows-6 opacity-50">
         {Array.from({ length: 36 }).map((_, index) => (
@@ -2077,9 +3589,67 @@ function MockMap({
       <div className="absolute left-0 right-0 top-[18%] h-3 rotate-[-7deg] bg-white/80" />
       <div className="absolute left-[-5%] right-[-5%] top-[55%] h-4 rotate-[12deg] bg-white/80" />
       <div className="absolute bottom-0 left-[18%] top-0 w-4 rotate-[6deg] bg-white/80" />
+      {tracedAreas.length > 0 || areaTraceDraft.length >= 2 ? (
+        <svg
+          className="pointer-events-none absolute inset-0 z-10 size-full"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          {tracedAreas.map(({ area, index, points }) => {
+            const color = areaTraceColor(index);
+            const centroid = areaTraceCentroid(points);
+            const isActive = area.areaId === areaTraceAreaId;
+            return (
+              <g key={area.areaId}>
+                <polygon
+                  points={areaTraceSvgPoints(points)}
+                  fill={color.fill}
+                  fillOpacity={isActive ? 0.24 : 0.16}
+                  stroke={color.stroke}
+                  strokeWidth={isActive ? 0.85 : 0.55}
+                  strokeLinejoin="round"
+                />
+                <text
+                  x={centroid.x}
+                  y={centroid.y}
+                  textAnchor="middle"
+                  className="fill-zinc-900 text-[3px] font-bold"
+                  paintOrder="stroke"
+                  stroke="white"
+                  strokeWidth="0.6"
+                >
+                  {area.name}
+                </text>
+              </g>
+            );
+          })}
+          {areaTraceDraft.length >= 3 ? (
+            <polygon
+              points={areaTraceSvgPoints(areaTraceDraft)}
+              fill="#059669"
+              fillOpacity="0.18"
+              stroke="#065f46"
+              strokeWidth="0.95"
+              strokeLinejoin="round"
+            />
+          ) : null}
+          {areaTraceDraft.length >= 2 ? (
+            <polyline
+              points={areaTraceSvgPoints(areaTraceDraft)}
+              fill="none"
+              stroke="#064e3b"
+              strokeWidth="1.35"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="1.6 1.1"
+            />
+          ) : null}
+        </svg>
+      ) : null}
       {routeLocations.length >= 2 ? (
         <svg
-          className="pointer-events-none absolute inset-0 size-full"
+          className="pointer-events-none absolute inset-0 z-10 size-full"
           viewBox="0 0 100 100"
           preserveAspectRatio="none"
           aria-hidden="true"
@@ -2112,17 +3682,12 @@ function MockMap({
         </svg>
       ) : null}
       <div
-        className="absolute inset-x-4 top-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white/95 px-3 py-2 text-sm shadow-sm"
+        className="absolute inset-x-4 top-4 z-30 flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white/95 px-3 py-2 text-sm shadow-sm"
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
         <span className="font-medium">MockMapProvider</span>
-        <span className="text-zinc-500">
-          {isLoading
-            ? "読み込み中"
-            : planSelectionMode
-              ? `${locations.length}件表示・ピンを複数選択`
-              : `${locations.length}件表示・地図タップで位置指定`}
-        </span>
+        <span className="text-zinc-500">{mapStatusText}</span>
         {isFullscreen ? (
           <button
             type="button"
@@ -2148,10 +3713,21 @@ function MockMap({
 
       {planSelectionMode ? (
         <div
-          className="absolute left-4 top-16 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900 shadow-sm"
+          className="absolute left-4 top-16 z-30 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900 shadow-sm"
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
           訪問予定に入れる地点を地図上で選択中: {planSelectedLocationIds.length}件
+        </div>
+      ) : null}
+
+      {areaTraceMode ? (
+        <div
+          className="absolute left-4 top-16 z-30 max-w-[calc(100%-32px)] rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-950 shadow-sm"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          地図上をドラッグしてJAエリア境界をなぞります。下書き {areaTraceDraft.length}点
         </div>
       ) : null}
 
@@ -2167,13 +3743,19 @@ function MockMap({
             title={`${location.customerName ?? "名称未設定"} ${location.address}`}
             onClick={(event) => {
               event.stopPropagation();
+              if (areaTraceMode) return;
+              setClosedPopupLocationId(null);
               if (planSelectionMode) {
                 onTogglePlanSelection(location.locationId);
               } else {
                 onSelect(location.locationId);
               }
             }}
-            className={`absolute grid size-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 text-xs font-bold text-white shadow-lg transition hover:scale-110 ${
+            onMouseEnter={() => setHoveredLocationId(location.locationId)}
+            onMouseLeave={() => setHoveredLocationId(null)}
+            onFocus={() => setHoveredLocationId(location.locationId)}
+            onBlur={() => setHoveredLocationId(null)}
+            className={`absolute z-20 grid size-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 text-xs font-bold text-white shadow-lg transition hover:scale-110 ${
               isPlanSelected
                 ? "border-emerald-950 ring-4 ring-emerald-200"
                 : selectedId === location.locationId
@@ -2187,8 +3769,25 @@ function MockMap({
         );
       })}
 
+      {popupLocation && popupPosition ? (
+        <MapLocationPopup
+          location={popupLocation}
+          area={areaForLocation(popupLocation, jaAreas, municipalities)}
+          municipality={municipalityForLocation(popupLocation, municipalities)}
+          isPlanSelected={planSelectedLocationIds.includes(
+            popupLocation.locationId,
+          )}
+          position={popupPosition}
+          onClose={() => {
+            setHoveredLocationId(null);
+            setClosedPopupLocationId(popupLocation.locationId);
+          }}
+        />
+      ) : null}
+
       <div
-        className="absolute bottom-4 left-4 right-4 flex flex-wrap gap-2 rounded-md border border-zinc-200 bg-white/95 p-3 shadow-sm"
+        className="absolute bottom-4 left-4 right-4 z-30 flex flex-wrap gap-2 rounded-md border border-zinc-200 bg-white/95 p-3 shadow-sm"
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
         {locationStatusOptions.slice(0, 8).map((option) => (
@@ -2205,9 +3804,176 @@ function MockMap({
   );
 }
 
+function clampPercent(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+const areaTracePalette = [
+  { fill: "#10b981", stroke: "#047857" },
+  { fill: "#38bdf8", stroke: "#0369a1" },
+  { fill: "#f59e0b", stroke: "#b45309" },
+  { fill: "#a78bfa", stroke: "#6d28d9" },
+  { fill: "#f472b6", stroke: "#be185d" },
+] as const;
+
+function normalizeAreaTracePoint(point: AreaTracePoint): AreaTracePoint {
+  return {
+    x: Number(clampPercent(point.x, 0, 100).toFixed(2)),
+    y: Number(clampPercent(point.y, 0, 100).toFixed(2)),
+  };
+}
+
+function normalizeAreaTracePoints(points: AreaTracePoint[]) {
+  return points.map(normalizeAreaTracePoint);
+}
+
+function areaTraceDistance(start: AreaTracePoint, end: AreaTracePoint) {
+  return Math.hypot(start.x - end.x, start.y - end.y);
+}
+
+function areaTraceSvgPoints(points: AreaTracePoint[]) {
+  return points.map((point) => `${point.x},${point.y}`).join(" ");
+}
+
+function areaTraceCentroid(points: AreaTracePoint[]) {
+  if (points.length === 0) return { x: 50, y: 50 };
+  const total = points.reduce(
+    (sum, point) => ({
+      x: sum.x + point.x,
+      y: sum.y + point.y,
+    }),
+    { x: 0, y: 0 },
+  );
+  return {
+    x: total.x / points.length,
+    y: total.y / points.length,
+  };
+}
+
+function areaTraceColor(index: number) {
+  return areaTracePalette[index % areaTracePalette.length];
+}
+
+function MapLocationPopup({
+  location,
+  area,
+  municipality,
+  isPlanSelected,
+  position,
+  onClose,
+}: {
+  location: Location;
+  area?: JaArea;
+  municipality?: Municipality;
+  isPlanSelected: boolean;
+  position: { x: number; y: number };
+  onClose: () => void;
+}) {
+  const meta = getStatusMeta(location.status);
+  const user = findUser(location.assignedUserId);
+  const showBelow = position.y < 42;
+  const left = clampPercent(position.x, 19, 81);
+  const top = clampPercent(position.y, 18, 82);
+
+  return (
+    <div
+      className="absolute z-30 w-[min(280px,calc(100%-32px))] rounded-md border border-zinc-200 bg-white p-3 text-sm shadow-xl"
+      style={{
+        left: `${left}%`,
+        top: `${top}%`,
+        transform: showBelow
+          ? "translate(-50%, 18px)"
+          : "translate(-50%, calc(-100% - 18px))",
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div
+        className={`absolute left-1/2 size-3 -translate-x-1/2 rotate-45 border-zinc-200 bg-white ${
+          showBelow
+            ? "-top-[7px] border-l border-t"
+            : "-bottom-[7px] border-b border-r"
+        }`}
+        aria-hidden="true"
+      />
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-zinc-950">
+            {location.customerName || "名称未設定"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-zinc-600">
+            {location.address}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="grid size-7 shrink-0 place-items-center rounded-md border border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+          onClick={onClose}
+          aria-label="ポップアップを閉じる"
+        >
+          <X size={14} />
+        </button>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <span
+          className={`inline-flex rounded px-2 py-1 text-xs font-semibold text-white ${meta.color}`}
+        >
+          {meta.label}
+        </span>
+        {isPlanSelected ? (
+          <span className="inline-flex rounded bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900">
+            訪問予定選択中
+          </span>
+        ) : null}
+      </div>
+      <dl className="mt-3 grid gap-2 text-xs">
+        <div className="flex justify-between gap-3">
+          <dt className="text-zinc-500">担当</dt>
+          <dd className="truncate font-medium text-zinc-800">
+            {user?.name ?? "未割当"}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-zinc-500">JA</dt>
+          <dd className="truncate font-medium text-zinc-800">
+            {area?.name ?? "未設定"}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-zinc-500">市町村</dt>
+          <dd className="truncate font-medium text-zinc-800">
+            {municipality
+              ? `${municipality.prefecture}${municipality.name}`
+              : "未設定"}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-zinc-500">最終訪問</dt>
+          <dd className="font-medium text-zinc-800">
+            {location.lastVisitDate ?? "-"}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-zinc-500">点検予定</dt>
+          <dd className="font-medium text-zinc-800">
+            {location.nextInspectionDate ?? "-"}
+          </dd>
+        </div>
+      </dl>
+      {location.memo ? (
+        <p className="mt-3 line-clamp-2 rounded bg-zinc-50 px-2 py-1.5 text-xs leading-5 text-zinc-600">
+          {location.memo}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function LocationDetail({
   location,
   currentUser,
+  jaAreas,
+  municipalities,
   notes,
   visitRecords,
   notesLoading,
@@ -2220,6 +3986,8 @@ function LocationDetail({
 }: {
   location: Location | null;
   currentUser: User;
+  jaAreas: JaArea[];
+  municipalities: Municipality[];
   notes: HandwrittenNote[];
   visitRecords: VisitRecord[];
   notesLoading: boolean;
@@ -2246,6 +4014,8 @@ function LocationDetail({
 
   const meta = getStatusMeta(location.status);
   const assignee = findUser(location.assignedUserId);
+  const area = areaForLocation(location, jaAreas, municipalities);
+  const municipality = municipalityForLocation(location, municipalities);
 
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
@@ -2283,6 +4053,15 @@ function LocationDetail({
 
       <dl className="mt-5 grid gap-3 text-sm">
         <DetailRow label="担当者" value={assignee?.name ?? "未割当"} />
+        <DetailRow label="JAエリア" value={area?.name ?? "未設定"} />
+        <DetailRow
+          label="市町村"
+          value={
+            municipality
+              ? `${municipality.prefecture}${municipality.name}`
+              : "未設定"
+          }
+        />
         <DetailRow label="緯度経度" value={`${location.lat}, ${location.lng}`} />
         <DetailRow label="施工日" value={location.constructionDate ?? "-"} />
         <DetailRow label="最終訪問日" value={location.lastVisitDate ?? "-"} />
@@ -2822,6 +4601,8 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 function LocationForm({
   currentUser,
   form,
+  jaAreas,
+  municipalities,
   isEditing,
   message,
   duplicateCandidates,
@@ -2832,6 +4613,8 @@ function LocationForm({
 }: {
   currentUser: User;
   form: LocationFormState;
+  jaAreas: JaArea[];
+  municipalities: Municipality[];
   isEditing: boolean;
   message: string;
   duplicateCandidates: DuplicateCandidate[];
@@ -2842,6 +4625,18 @@ function LocationForm({
 }) {
   const canAssign = currentUser.role === "admin";
   const hasLocation = form.lat !== "" && form.lng !== "";
+  const hasApproximateAddress = form.address.includes("地図選択・番地要確認");
+  const areaOptions =
+    currentUser.role === "admin"
+      ? jaAreas
+      : jaAreas.filter(
+          (area) =>
+            currentUser.assignedAreaIds.includes(area.areaId) ||
+            area.areaId === form.areaId,
+        );
+  const municipalityOptions = municipalities.filter(
+    (municipality) => municipality.areaId === form.areaId,
+  );
 
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
@@ -2861,6 +4656,11 @@ function LocationForm({
           required
           onChange={(value) => onChange({ ...form, address: value })}
         />
+        {hasApproximateAddress ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+            地図タップから入れた仮住所です。正確な住所・番地はお客さま確認後に修正してください。
+          </p>
+        ) : null}
         <DuplicateWarningList
           title="重複候補があります"
           candidates={duplicateCandidates}
@@ -2930,6 +4730,57 @@ function LocationForm({
                   {user.name}
                 </option>
               ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">JAエリア</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={form.areaId}
+            onChange={(event) => {
+              const nextAreaId = event.target.value;
+              const nextMunicipalityId =
+                municipalities.find(
+                  (municipality) => municipality.areaId === nextAreaId,
+                )?.municipalityId ?? "";
+              onChange({
+                ...form,
+                areaId: nextAreaId,
+                municipalityId: nextMunicipalityId,
+              });
+            }}
+          >
+            {areaOptions.length === 0 ? (
+              <option value="">JAエリア未登録</option>
+            ) : null}
+            {areaOptions.map((area) => (
+              <option key={area.areaId} value={area.areaId}>
+                {area.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-zinc-700">市町村</span>
+          <select
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 outline-none focus:border-emerald-600"
+            value={form.municipalityId}
+            onChange={(event) =>
+              onChange({ ...form, municipalityId: event.target.value })
+            }
+          >
+            {municipalityOptions.length === 0 ? (
+              <option value="">市町村未登録</option>
+            ) : null}
+            {municipalityOptions.map((municipality) => (
+              <option
+                key={municipality.municipalityId}
+                value={municipality.municipalityId}
+              >
+                {municipality.prefecture}
+                {municipality.name}
+              </option>
+            ))}
           </select>
         </label>
         <div className="grid grid-cols-2 gap-3">
@@ -3014,10 +4865,14 @@ function TextField({
 
 function LocationTable({
   locations,
+  jaAreas,
+  municipalities,
   selectedId,
   onSelect,
 }: {
   locations: Location[];
+  jaAreas: JaArea[];
+  municipalities: Municipality[];
   selectedId: string | null;
   onSelect: (locationId: string) => void;
 }) {
@@ -3028,10 +4883,12 @@ function LocationTable({
         <span className="text-sm text-zinc-500">{locations.length}件</span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-[1040px] text-left text-sm">
           <thead className="bg-zinc-50 text-zinc-600">
             <tr>
               <th className="px-4 py-3 font-medium">顧客名</th>
+              <th className="px-4 py-3 font-medium">JAエリア</th>
+              <th className="px-4 py-3 font-medium">市町村</th>
               <th className="px-4 py-3 font-medium">住所</th>
               <th className="px-4 py-3 font-medium">ステータス</th>
               <th className="px-4 py-3 font-medium">担当者</th>
@@ -3041,6 +4898,8 @@ function LocationTable({
           <tbody>
             {locations.map((location) => {
               const meta = getStatusMeta(location.status);
+              const area = areaForLocation(location, jaAreas, municipalities);
+              const municipality = municipalityForLocation(location, municipalities);
               return (
                 <tr
                   key={location.locationId}
@@ -3051,6 +4910,12 @@ function LocationTable({
                 >
                   <td className="px-4 py-3 font-medium">
                     {location.customerName || "名称未設定"}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-700">
+                    {area?.name ?? "未設定"}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-700">
+                    {municipality ? municipality.name : "未設定"}
                   </td>
                   <td className="px-4 py-3 text-zinc-700">{location.address}</td>
                   <td className="px-4 py-3">

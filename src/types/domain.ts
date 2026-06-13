@@ -11,6 +11,41 @@ export type User = {
   updatedAt: string;
 };
 
+export type AreaTracePoint = {
+  x: number;
+  y: number;
+};
+
+export type AreaTrace = {
+  points: AreaTracePoint[];
+  source: "manual_trace";
+  updatedAt: string;
+  updatedBy?: string;
+};
+
+export type JaArea = {
+  areaId: string;
+  name: string;
+  code?: string;
+  memo?: string;
+  boundaryTrace?: AreaTrace;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+};
+
+export type Municipality = {
+  municipalityId: string;
+  areaId: string;
+  prefecture: string;
+  name: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+};
+
 export type LocationStatus =
   | "unvisited"
   | "visited"
@@ -32,6 +67,7 @@ export type Location = {
   status: LocationStatus;
   assignedUserId?: string;
   areaId?: string;
+  municipalityId?: string;
   constructionDate?: string;
   lastVisitDate?: string;
   nextInspectionDate?: string;
@@ -225,6 +261,16 @@ export interface GeocodingService {
   geocode(
     address: string,
   ): Promise<{ lat: number; lng: number; normalizedAddress?: string }>;
+  reverseGeocode(params: {
+    lat: number;
+    lng: number;
+    nearbyLocations?: Location[];
+  }): Promise<{
+    address: string;
+    normalizedAddress?: string;
+    confidence: "nearby_location" | "area" | "coordinate";
+    sourceLocationId?: string;
+  }>;
 }
 
 export interface MapTileProvider {
@@ -251,6 +297,7 @@ export type LocationInput = {
   status: LocationStatus;
   assignedUserId?: string;
   areaId?: string;
+  municipalityId?: string;
   constructionDate?: string;
   lastVisitDate?: string;
   nextInspectionDate?: string;
