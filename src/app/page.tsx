@@ -1593,7 +1593,8 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <HeaderShortcutNav role={currentUser.role} />
             <span className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm">
               <UserRound size={16} />
               {currentUser.name}
@@ -1631,51 +1632,55 @@ export default function Home() {
             municipalities={visibleMunicipalities}
             decisionLogs={decisionLogs}
           />
-          <LocationForm
-            currentUser={currentUser}
-            form={form}
-            jaAreas={jaAreas}
-            municipalities={municipalities}
-            isEditing={isEditing}
-            message={message}
-            duplicateCandidates={formDuplicateCandidates}
-            onChange={setForm}
-            onCancel={resetForm}
-            onGeocodeAddress={() => geocodeAddress(form.address)}
-            onSubmit={submitLocation}
-          />
-          <VisitPlanPanel
-            currentUser={currentUser}
-            date={visitPlanDate}
-            planUserId={effectiveVisitPlanUserId}
-            visitPlan={visitPlan}
-            locations={locations}
-            selectedLocation={selectedLocation}
-            mapSelectedLocationIds={mapSelectedLocationIds}
-            mapPlanSelectionMode={mapPlanSelectionMode}
-            optimizedRoute={optimizedRoute}
-            selectedWarnings={selectedVisitWarnings}
-            mapSelectionWarnings={mapSelectionVisitWarnings}
-            message={visitPlanMessage}
-            onDateChange={(date) => {
-              setVisitPlanDate(date);
-              setVisitPlanMessage("");
-            }}
-            onPlanUserChange={(userId) => {
-              setVisitPlanUserId(userId);
-              setVisitPlanMessage("");
-            }}
-            onCreatePlan={ensureVisitPlan}
-            onAddSelected={addLocationToVisitPlan}
-            onAddMapSelection={addLocationsToVisitPlan}
-            onMoveItem={moveVisitPlanItem}
-            onRemoveItem={removeVisitPlanItem}
-            onOptimizeRoute={optimizeVisitPlanRoute}
-            onToggleMapSelectionMode={() =>
-              setMapPlanSelectionMode((current) => !current)
-            }
-            onClearMapSelection={clearMapPlanSelection}
-          />
+          <div id="location-input" className="scroll-mt-4">
+            <LocationForm
+              currentUser={currentUser}
+              form={form}
+              jaAreas={jaAreas}
+              municipalities={municipalities}
+              isEditing={isEditing}
+              message={message}
+              duplicateCandidates={formDuplicateCandidates}
+              onChange={setForm}
+              onCancel={resetForm}
+              onGeocodeAddress={() => geocodeAddress(form.address)}
+              onSubmit={submitLocation}
+            />
+          </div>
+          <div id="visit-plan" className="scroll-mt-4">
+            <VisitPlanPanel
+              currentUser={currentUser}
+              date={visitPlanDate}
+              planUserId={effectiveVisitPlanUserId}
+              visitPlan={visitPlan}
+              locations={locations}
+              selectedLocation={selectedLocation}
+              mapSelectedLocationIds={mapSelectedLocationIds}
+              mapPlanSelectionMode={mapPlanSelectionMode}
+              optimizedRoute={optimizedRoute}
+              selectedWarnings={selectedVisitWarnings}
+              mapSelectionWarnings={mapSelectionVisitWarnings}
+              message={visitPlanMessage}
+              onDateChange={(date) => {
+                setVisitPlanDate(date);
+                setVisitPlanMessage("");
+              }}
+              onPlanUserChange={(userId) => {
+                setVisitPlanUserId(userId);
+                setVisitPlanMessage("");
+              }}
+              onCreatePlan={ensureVisitPlan}
+              onAddSelected={addLocationToVisitPlan}
+              onAddMapSelection={addLocationsToVisitPlan}
+              onMoveItem={moveVisitPlanItem}
+              onRemoveItem={removeVisitPlanItem}
+              onOptimizeRoute={optimizeVisitPlanRoute}
+              onToggleMapSelectionMode={() =>
+                setMapPlanSelectionMode((current) => !current)
+              }
+              onClearMapSelection={clearMapPlanSelection}
+            />
+          </div>
         </aside>
 
         <section className="min-w-0 space-y-5">
@@ -1737,26 +1742,28 @@ export default function Home() {
           ) : null}
 
           <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_360px]">
-            <MockMap
-              locations={filteredLocations}
-              jaAreas={jaAreas}
-              municipalities={municipalities}
-              selectedId={selectedLocation?.locationId ?? null}
-              planSelectionMode={mapPlanSelectionMode}
-              planSelectedLocationIds={mapSelectedLocationIds}
-              routeLocationIds={optimizedRoute?.orderedPointIds ?? []}
-              areaTraceMode={activeAreaTraceMode}
-              areaTraceAreaId={selectedTraceAreaId}
-              areaTraceDraft={areaTraceDraft}
-              onSelect={setSelectedId}
-              onTogglePlanSelection={toggleMapPlanSelection}
-              onMapPick={setFormLocationFromMap}
-              onAreaTraceStart={startAreaTrace}
-              onAreaTraceAppend={appendAreaTrace}
-              onAreaTraceEnd={finishAreaTrace}
-              onOpenFullscreen={() => setIsMapFullscreen(true)}
-              isLoading={isLoading}
-            />
+            <div id="map-view" className="min-w-0 scroll-mt-4">
+              <MockMap
+                locations={filteredLocations}
+                jaAreas={jaAreas}
+                municipalities={municipalities}
+                selectedId={selectedLocation?.locationId ?? null}
+                planSelectionMode={mapPlanSelectionMode}
+                planSelectedLocationIds={mapSelectedLocationIds}
+                routeLocationIds={optimizedRoute?.orderedPointIds ?? []}
+                areaTraceMode={activeAreaTraceMode}
+                areaTraceAreaId={selectedTraceAreaId}
+                areaTraceDraft={areaTraceDraft}
+                onSelect={setSelectedId}
+                onTogglePlanSelection={toggleMapPlanSelection}
+                onMapPick={setFormLocationFromMap}
+                onAreaTraceStart={startAreaTrace}
+                onAreaTraceAppend={appendAreaTrace}
+                onAreaTraceEnd={finishAreaTrace}
+                onOpenFullscreen={() => setIsMapFullscreen(true)}
+                isLoading={isLoading}
+              />
+            </div>
             <LocationDetail
               location={selectedLocation}
               currentUser={currentUser}
@@ -1909,6 +1916,53 @@ function LoginScreen({ onLogin }: { onLogin: (user: User) => void }) {
         </section>
       </div>
     </main>
+  );
+}
+
+function HeaderShortcutNav({ role }: { role: User["role"] }) {
+  const shortcuts =
+    role === "admin"
+      ? [
+          { href: "#admin-kpi", label: "KPI", icon: <BarChart3 size={15} /> },
+          {
+            href: "#admin-knowledge",
+            label: "未決定理由",
+            icon: <Lightbulb size={15} />,
+          },
+          { href: "#map-view", label: "地図", icon: <MapPin size={15} /> },
+          { href: "#location-input", label: "入力", icon: <Plus size={15} /> },
+          {
+            href: "#system-admin",
+            label: "設定",
+            icon: <ShieldCheck size={15} />,
+          },
+        ]
+      : [
+          { href: "#map-view", label: "地図", icon: <MapPin size={15} /> },
+          { href: "#location-input", label: "入力", icon: <Plus size={15} /> },
+          {
+            href: "#visit-plan",
+            label: "訪問予定",
+            icon: <CalendarClock size={15} />,
+          },
+        ];
+
+  return (
+    <nav
+      aria-label="画面内ショートカット"
+      className="flex flex-wrap items-center justify-end gap-1.5"
+    >
+      {shortcuts.map((shortcut) => (
+        <a
+          key={shortcut.href}
+          href={shortcut.href}
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+        >
+          {shortcut.icon}
+          {shortcut.label}
+        </a>
+      ))}
+    </nav>
   );
 }
 
@@ -2153,23 +2207,30 @@ function AdminPanel({
 
   return (
     <>
-      <SalesKpiDashboard
-        locations={locations}
-        visitRecords={visitRecords}
-        visitPlans={visitPlans}
-        jaAreas={jaAreas}
-        municipalities={municipalities}
-      />
+      <div id="admin-kpi" className="scroll-mt-4">
+        <SalesKpiDashboard
+          locations={locations}
+          visitRecords={visitRecords}
+          visitPlans={visitPlans}
+          jaAreas={jaAreas}
+          municipalities={municipalities}
+        />
+      </div>
 
-      <DecisionKnowledgeDashboard
-        decisionLogs={decisionLogs}
-        locations={locations}
-        jaAreas={jaAreas}
-        municipalities={municipalities}
-        onUpdateDecisionLog={onUpdateDecisionLog}
-      />
+      <div id="admin-knowledge" className="scroll-mt-4">
+        <DecisionKnowledgeDashboard
+          decisionLogs={decisionLogs}
+          locations={locations}
+          jaAreas={jaAreas}
+          municipalities={municipalities}
+          onUpdateDecisionLog={onUpdateDecisionLog}
+        />
+      </div>
 
-      <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+      <section
+        id="system-admin"
+        className="scroll-mt-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm"
+      >
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="flex items-center gap-2">

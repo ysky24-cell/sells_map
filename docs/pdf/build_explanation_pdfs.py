@@ -52,6 +52,7 @@ class AppStats:
     visit_records: int
     visit_plans: int
     visit_plan_items: int
+    decision_logs: int
     status_counts: dict[str, int]
 
 
@@ -70,6 +71,7 @@ def load_stats() -> AppStats:
     visit_records = load_json("data/visit-records.json")
     visit_plans = load_json("data/visit-plans.json")
     visit_plan_items = load_json("data/visit-plan-items.json")
+    decision_logs = load_json("data/decision-logs.json")
     status_counts: dict[str, int] = {}
     for loc in locations:
         status = loc.get("status", "unknown")
@@ -79,6 +81,7 @@ def load_stats() -> AppStats:
         visit_records=len(visit_records),
         visit_plans=len(visit_plans),
         visit_plan_items=len(visit_plan_items),
+        decision_logs=len(decision_logs),
         status_counts=status_counts,
     )
 
@@ -541,7 +544,7 @@ def build_management_pdf(stats: AppStats) -> Path:
         callout(
             "MVPは、紙地図運用をデジタル地図・訪問予定・履歴・重複警告へ置き換える第一段階として成立しています。"
             "現時点ではGitHub Pages上の静的プロトタイプですが、Repository層・MapProvider・GeocodingService・RouteServiceを分離しており、"
-            "AWS・実地図APIへの移行前提で検証できます。",
+            "AWS・実地図APIへの移行前提で検証できます。加えて、未決定理由をナレッジ化し、対策案の優先度づけと営業周知まで扱えるようになりました。",
             ss,
         )
     )
@@ -577,7 +580,8 @@ def build_management_pdf(stats: AppStats) -> Path:
                 ["訪問NG・施工済み・点検予定の見落とし", "重複候補、訪問NG、点検予定の警告", "クレーム・無駄訪問を抑える"],
                 ["訪問予定が多い日に1件ずつ確認が必要", "地図上で複数ピン選択、180件規模を想定", "計画作成の処理量を上げる"],
                 ["徒歩1万歩超になるケースがある", "ルート最適化、全画面地図、モバイル運用", "身体的負担を下げ、訪問時間へ再配分"],
-                ["管理者が全体状況を把握しにくい", "管理ダッシュボード、要対応・データ品質チェック", "担当者別・状態別の改善指示が出しやすい"],
+                ["管理者が全体状況を把握しにくい", "KPI、未決定理由、システム管理へヘッダーから移動", "朝一番に見るべき集計へすぐアクセスできる"],
+                ["決まらない理由が個人メモに残りがち", "未決定理由、リスク、対策案、採用/未採用理由をログ化", "現場の迷いを改善ノウハウとして蓄積できる"],
             ],
             [45, 58, 55],
             ss,
@@ -663,10 +667,10 @@ def build_management_pdf(stats: AppStats) -> Path:
         data_table(
             ["観点", "結果"],
             [
-                ["自動テスト", "5ファイル、10テスト成功。CSV、重複警告、ルート最適化、訪問結果変換を確認"],
+                ["自動テスト", "6ファイル、13テスト成功。CSV、重複警告、ルート最適化、訪問結果変換を確認"],
                 ["品質チェック", "TypeScript、lint、GitHub Pages向けbuildが成功"],
-                ["ブラウザ確認", "ログイン、管理者/営業担当者切替、検索・フィルタ、地図タップ、訪問予定、ルート最適化、全画面地図、タブレット幅を確認"],
-                ["サンプルデータ", f"地点{stats.locations}件、訪問履歴{stats.visit_records}件、訪問予定{stats.visit_plans}件、訪問予定明細{stats.visit_plan_items}件"],
+                ["ブラウザ確認", "ログイン、管理者/営業担当者切替、検索・フィルタ、地図タップ、訪問予定、ルート最適化、全画面地図、ヘッダー導線、未決定理由、仮説検証注釈を確認"],
+                ["サンプルデータ", f"地点{stats.locations}件、訪問履歴{stats.visit_records}件、訪問予定{stats.visit_plans}件、訪問予定明細{stats.visit_plan_items}件、未決定理由ログ{stats.decision_logs}件"],
                 ["公開状況", f"GitHub Pagesで公開済み: {APP_URL}"],
             ],
             [45, 123],
@@ -689,6 +693,7 @@ def build_management_pdf(stats: AppStats) -> Path:
             "AWS認証・保存: Cognito、DynamoDB、S3、監査ログを接続する。",
             "地図API: Amazon Location Service、ZENRIN等の住宅地図API、ルート最適化APIの費用を見積もる。",
             "運用設計: 訪問NG、個人情報、削除履歴、担当者変更、端末紛失時の対応を定義する。",
+            "ナレッジ運用: 未決定理由、採用/未採用理由、営業周知、対策結果の見直しを監査ログとして共有する。",
             "効果測定: 紙地図確認時間、徒歩移動負担、訪問予定作成時間、追加訪問枠、成約率を月次で追う。",
             "E2Eテスト: ログインから訪問予定作成・訪問結果登録までの自動検証を追加する。",
         ],
@@ -728,7 +733,7 @@ def build_user_pdf(stats: AppStats) -> Path:
                 (f"{stats.locations}件", "サンプル地点"),
                 (f"{stats.visit_records}件", "訪問履歴"),
                 (f"{stats.visit_plans}件", "訪問予定"),
-                (f"{stats.visit_plan_items}件", "訪問予定明細"),
+                (f"{stats.decision_logs}件", "未決定理由ログ"),
             ],
             ss,
             ACCENT_GREEN,
@@ -741,6 +746,8 @@ def build_user_pdf(stats: AppStats) -> Path:
             "検索、ステータス、担当者で絞り込めます。",
             "地点詳細から訪問履歴、手書きメモ、編集、論理削除ができます。",
             "訪問予定は地図上で複数ピンを選び、まとめて追加できます。",
+            "ヘッダーのショートカットから、地図、入力、訪問予定へすぐ移動できます。",
+            "決まらない理由は未決定理由・対策案として残し、管理者へ共有できます。",
         ],
         ss["bullet"],
     )
@@ -758,11 +765,11 @@ def build_user_pdf(stats: AppStats) -> Path:
             ["手順", "操作", "見るポイント"],
             [
                 ["1", "ログイン画面で自分のユーザーを選ぶ", "営業担当者は自分の担当エリア中心に表示されます"],
-                ["2", "左側の訪問予定パネルを見る", "訪問先数、次の訪問先、ルート状態、選択中件数を確認します"],
+                ["2", "ヘッダーの地図・入力・訪問予定を使う", "今やりたい作業の場所へすぐ移動できます"],
                 ["3", "検索・フィルタで対象地点を絞る", "住所、顧客名、ステータス、担当者で絞り込みます"],
                 ["4", "地図で選ぶをオンにしてピンを複数選択", "件数が多い日でも、詳細を1件ずつ開かずに予定へ追加できます"],
                 ["5", "ルート最適化を実行", "訪問順、総距離、推定時間、ルート線を確認します"],
-                ["6", "訪問後に履歴を追加", "結果、次回アクション日、メモを残すと地点ステータスも更新されます"],
+                ["6", "訪問後に履歴や未決定理由を追加", "結果、次回アクション、決まらない理由、対策案を残します"],
             ],
             [14, 66, 88],
             ss,
@@ -875,13 +882,34 @@ def build_user_pdf(stats: AppStats) -> Path:
         ss["bullet"],
     )
 
-    story += section_title("7. 管理者と営業担当者の違い", ss)
+    story += section_title("7. 未決定理由と対策案を残す", ss)
+    story.append(
+        callout(
+            "商談や点検案内が決まらない理由には、次の対策を考えるためのリスクとノウハウが含まれます。"
+            "地点詳細の「未決定理由・対策案」から、理由、リスク、対策案、優先度を登録してください。",
+            ss,
+            fill=PALE_AMBER,
+            border=ACCENT_AMBER,
+        )
+    )
+    story += bullets(
+        [
+            "仮説は効果がまだ確定していないため、最初は複数出して構いません。",
+            "対策案はいくつ出しても構いませんが、現場の運用負荷が増えすぎないように優先度を決めます。",
+            "重要な対策から順に実行し、実行後は結果を記録して定期的に見直します。",
+            "管理者が採用した対策は、営業画面の決定事項として周知されます。",
+            "未採用になった対策も、理由を残すことで次の判断材料になります。",
+        ],
+        ss["bullet"],
+    )
+
+    story += section_title("8. 管理者と営業担当者の違い", ss)
     story.append(
         data_table(
             ["利用者", "主な画面", "主な目的"],
             [
-                ["管理者", "全地点、管理ダッシュボード、担当者切り替え、CSV入出力", "全体状況、担当者別件数、重複候補、データ品質を確認する"],
-                ["営業担当者", "自分の担当者・担当エリア中心の地図、訪問予定、今日の作業サマリー", "日々の訪問候補確認、予定作成、訪問結果登録を行う"],
+                ["管理者", "KPI、未決定理由、システム管理、担当者切り替え、CSV入出力", "全体状況、担当者別件数、重複候補、ナレッジ、データ品質を確認する"],
+                ["営業担当者", "自分の担当者・担当エリア中心の地図、入力、訪問予定、今日の作業サマリー", "日々の訪問候補確認、予定作成、訪問結果・未決定理由の登録を行う"],
             ],
             [32, 68, 68],
             ss,
@@ -889,7 +917,7 @@ def build_user_pdf(stats: AppStats) -> Path:
         )
     )
 
-    story += section_title("8. MVP利用時の注意", ss)
+    story += section_title("9. MVP利用時の注意", ss)
     story.append(
         callout(
             "GitHub Pages版はサーバーAPIがないため、画面操作で追加・編集したデータはブラウザ内のlocalStorageに保存されます。"
